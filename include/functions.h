@@ -11,11 +11,16 @@ enum pairType {
     TO_CENTER,
     LINE_HORIZONTAL,
     LINE_VERTICAL,
-    CROSS
+    CROSS,
+    TO_CENTER_SMALL,
+    MID_LEFT
 };
 class Camera;
 
 std::vector<std::array<int, 2>> getCameraPairs(std::vector<Camera>& cameras, pairType pairs);
+
+double getAbsDiff(cv::Mat& mat1, cv::Mat& mat2);
+
 
 void showImage(std::string name, cv::Mat image);
 

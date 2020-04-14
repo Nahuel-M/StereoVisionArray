@@ -15,6 +15,19 @@ std::vector<std::array<int, 2>> getCameraPairs(std::vector<Camera>& cameras, pai
             pairs.push_back({ 12, i });
         }
     }
+    else if (pair == TO_CENTER_SMALL) {
+            pairs.push_back({ 12, 6 });
+            pairs.push_back({ 12, 7 });
+            pairs.push_back({ 12, 8 });
+            pairs.push_back({ 12, 11 });
+            pairs.push_back({ 12, 13 });
+            pairs.push_back({ 12, 16 });
+            pairs.push_back({ 12, 17 });
+            pairs.push_back({ 12, 18 });
+    }
+    else if (pair == MID_LEFT) {
+        pairs.push_back({ 12, 11 });
+    }
     else if (pair == LINE_HORIZONTAL) {
         for (int i = 10; i < 15; i++) {
             if (i == 12) continue;
@@ -40,6 +53,11 @@ std::vector<std::array<int, 2>> getCameraPairs(std::vector<Camera>& cameras, pai
             pairs.push_back({ 12, 17 });
     }
     return pairs;
+}
+
+double getAbsDiff(cv::Mat& mat1, cv::Mat& mat2)
+{
+    return sum(abs(mat1-mat2))[0];
 }
 
 void showImage(std::string name, Mat image) {
