@@ -63,7 +63,7 @@ int main()
     //for (int x = kernelSize; x < resolution.width - kernelSize; x++) {
     for (int x = resolution.width/2; x < resolution.width - kernelSize; x++) {
         //for (int y = kernelSize; y < (resolution.height - kernelSize);  y++) {
-        for (int y = resolution.height/2; y < (resolution.height - kernelSize);  y++) {
+        for (int y = resolution.height/2 + 70; y < (resolution.height - kernelSize);  y++) {
             if (mask.at<uint8_t>(Point(x, y)) == 0) continue;
 
             for (auto pair : pairs) {
@@ -92,6 +92,7 @@ int main()
                 //std::cout << pixel1 << ", " << pixel2 << std::endl;
                 //std::cout << pixels << std::endl;
                 std::vector<float> error;
+                std::vector<float> depths;
                 //std::cout << x << ", " << y << ", " << pixel1 << std::endl;
                 for (auto p : pixels) {
                     Rect selector = Rect{ p - Point(kernelSize, kernelSize), p + Point(kernelSize, kernelSize) };
@@ -99,16 +100,12 @@ int main()
                     Mat result{ CV_32FC1 };
                     matchTemplate(selection, kernel, result, TM_CCORR_NORMED);
                     error.push_back(result.at<float>(0, 0));
-
-                    //im2cop(selector) = 30;
+                    depths.push_back(camDistance * f / (pixelSize * norm(p - Point2i{ x, y })));
                     im2cop.at<uint8_t>(p) = 0;
-                    //std::cout << result.at<float>(0, 0) << std::endl;
-                    //imshow("Selection", selection);
-                    //waitKey(0);
                 }
                 //imshow("im2", im2);
                 //waitKey(0);
-                matplotlibcpp::plot(error);
+                matplotlibcpp::plot(depths, error);
                 int maxIndex = std::distance(error.begin(), std::max_element(error.begin(), error.end()));
                 //std::cout << "MaxValue: " << error[maxIndex] << " at " << maxIndex << std::endl;
                 //float err = *std::max_element(error.begin(), error.end());
