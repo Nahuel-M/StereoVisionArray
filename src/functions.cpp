@@ -4,6 +4,7 @@
 
 #include "functions.h"
 #include "Camera.h"
+#include "dlibFaceSelect.h"
 
 using namespace cv;
 
@@ -28,6 +29,9 @@ std::vector<std::array<int, 2>> getCameraPairs(std::vector<Camera>& cameras, pai
     else if (pair == MID_LEFT) {
         pairs.push_back({ 12, 11 });
     }
+    else if (pair == MID_TOP) {
+        pairs.push_back({ 12, 7 });
+    }
     else if (pair == LINE_HORIZONTAL) {
         for (int i = 10; i < 15; i++) {
             if (i == 12) continue;
@@ -40,17 +44,17 @@ std::vector<std::array<int, 2>> getCameraPairs(std::vector<Camera>& cameras, pai
             pairs.push_back({ 12, i });
         }
     }
-    else if (pair == LINE_VERTICAL) {
-        for (int i = 2; i < 25; i += 5) {
-            if (i == 12) continue;
-            pairs.push_back({ 12, i });
-        }
-    }
     else if (pair == CROSS) {
             pairs.push_back({ 12, 11 });
             pairs.push_back({ 12, 13 });
             pairs.push_back({ 12, 7 });
             pairs.push_back({ 12, 17 });
+    }
+    else if (pair == JUMP_CROSS) {
+        pairs.push_back({ 12, 10 });
+        pairs.push_back({ 12, 14 });
+        pairs.push_back({ 12, 2 });
+        pairs.push_back({ 12, 24 });
     }
     return pairs;
 }
@@ -146,4 +150,37 @@ std::vector<Point2i> bresenham(Point2i point2, Point2i point1)
             return plotLineHigh(point1.x, point1.y, point2.x, point2.y);
         }
     }
+}
+
+cv::Mat getIdealRef() {
+    Mat R;
+    cv::FileStorage file;
+    file.open("idealRef.yml", cv::FileStorage::READ);
+    file["R"] >> R;
+    return R;
+}
+
+void saveImage(std::string filename, cv::Mat image)
+{
+    cv::FileStorage file(filename, cv::FileStorage::WRITE);
+    // Write to file!
+    file << "image" << image;
+
+}
+
+cv::Mat loadImage(std::string filename)
+{
+    Mat R;
+    cv::FileStorage file;
+    file.open(filename, cv::FileStorage::READ);
+    file["image"] >> R;
+    return R;
+}
+
+double calculateAverageError(cv::Mat &image)
+{
+    std::string folder = "Images";
+    std::vector<std::string> files = getImagesPathsFromFolder(folder);
+    Mat mask = getFaceMask();
+    return cv::mean(image, mask)[0];
 }

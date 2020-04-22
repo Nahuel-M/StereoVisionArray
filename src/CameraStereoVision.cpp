@@ -4,21 +4,60 @@
 #include "functions.h"
 #include "dlibFaceSelect.h"
 #include "matplotlibcpp.h"
+#include "generateIdealReference.h"
 
 using namespace cv;
 
+void generateDepthFromImages();
+Mat diff;
+
+void CallBackFunc(int event, int x, int y, int flags, void* userdata)
+{
+    if (event == EVENT_LBUTTONDOWN)
+    {
+        std::cout << "at position (" << x << ", " << y << ")" << ": "<< diff.at<double>(Point(x,y)) << std::endl;
+    }
+
+
+}
 int main()
 {
+    //generateDepthFromImages();
+    //saveReference("D:\\Documents\\Uni\\Thesis\\Head_model\\HeadToScale.obj");
+
+
+    Mat ref = getIdealRef();
+    Mat im = loadImage("MidTopR100K20");
+    resize(im, im, ref.size());
+    Mat refC;
+    ref.copyTo(refC, (im != 0));
+    showImage("ref", refC);
+    showImage("im", im);
+    diff = abs(refC-im);
+    std::cout << calculateAverageError(diff) << std::endl;
+    //saveImage("DifferenceCrossR100K20", diff);
+    namedWindow("Diff", WINDOW_NORMAL);
+    resizeWindow("Diff", 710, 540);
+    imshow("Diff", diff*150);
+    setMouseCallback("Diff", CallBackFunc, NULL);
+    //double max;
+    //minMaxIdx(diff, nullptr, max, nullptr, nullptr);
+    waitKey(0);
+    return 0;
+    
+}
+
+void generateDepthFromImages() {
     // Images
     std::string folder = "Images";
     std::vector<std::string> files = getImagesPathsFromFolder(folder);
     std::vector<Mat> images;
     for (int i = 0; i < files.size(); i++) {
         images.push_back(imread(files[i], IMREAD_GRAYSCALE));
-        //resize(images.back(), images.back(), Size(), 0.5, 0.5);
+        resize(images.back(), images.back(), Size(), 0.5, 0.5);
     }
 
-    Mat mask = getFaceMask(images[12]);
+    Mat mask = getFaceCircle(images[12]);
 
     // Camera parameters
     double f = 0.05;
@@ -39,22 +78,21 @@ int main()
     }
 
     // Pairs
-    std::vector<std::array<int,2>> pairs = getCameraPairs(cameras, MID_LEFT);
+    std::vector<std::array<int, 2>> pairs = getCameraPairs(cameras, CROSS);
 
-    int kernelSize = 20;
-    Mat depth = Mat{ images[12].size(), CV_64FC1};
+    int kernelSize = 10;
+    Mat depth = Mat{ images[12].size(), CV_64FC1 };
 
     for (int x = kernelSize; x < resolution.width - kernelSize; x++) {
-    //for (int x = resolution.width/2; x < resolution.width - kernelSize; x++) {
+        //for (int x = resolution.width/2; x < resolution.width - kernelSize; x++) {
         std::cout << x << std::endl;
-        for (int y = kernelSize; y < (resolution.height - kernelSize);  y++) {
-        //for (int y = resolution.height/2; y < (resolution.height - kernelSize);  y++) {
+        for (int y = kernelSize; y < (resolution.height - kernelSize); y++) {
+            //for (int y = resolution.height/2; y < (resolution.height - kernelSize);  y++) {
             if (mask.at<uint8_t>(Point(x, y)) == 0) continue;
 
             for (auto pair : pairs) {
                 double camDistance = norm(cameras[pair[0]].pos3D - cameras[pair[1]].pos3D);
                 Mat kernel = images[pair[0]](Rect{ Point2i{x - kernelSize, y - kernelSize}, Point2i{x + kernelSize, y + kernelSize} });
-                //imshow("Kernel", kernel);
                 //Mat im1cop = images[pair[0]].clone();
                 //im1cop.at<uint8_t>(Point(x,y)) = 255;
                 //Mat im2cop = images[pair[1]].clone();
@@ -99,7 +137,7 @@ int main()
                 //float err = *std::max_element(error.begin(), error.end());
                 //std::cout << "Max value: " << err << " at: " << maxIndex << std::endl;
                 Point2i pixel = pixels[maxIndex];
-                depth.at<double>(Point(x, y)) = depth.at<double>(Point(x, y)) + camDistance * f / (pixelSize * norm(pixel - Point2i{ x, y }));
+                depth.at<double>(Point(x, y)) = depth.at<double>(Point(x, y)) + camDistance * f / (pixelSize * norm(pixel - Point2i{ x, y })) / 4;
                 //std::cout << "Depth: " << camDistance * f / (pixelSize * norm(pixel - Point2i{ x, y })) << std::endl;
                 //imshow("Depth", depth);
                 //im2cop.at<uint8_t>(pixel) = 255;
@@ -114,9 +152,10 @@ int main()
         }
         //std::cout << x << std::endl;
     }
-    namedWindow("Depth", 1);
+    //namedWindow("Depth", 1);
     //setMouseCallback("My Window", CallBackFunc, NULL);
-    imshow("Depth", depth);
+    showImage("Depth", (depth - 0.5) * 3.333);
+    saveImage("CrossR050K10", depth);
     waitKey(0);
-}
 
+}

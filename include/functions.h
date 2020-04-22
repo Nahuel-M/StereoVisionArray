@@ -12,8 +12,10 @@ enum pairType {
     LINE_HORIZONTAL,
     LINE_VERTICAL,
     CROSS,
+    JUMP_CROSS,
     TO_CENTER_SMALL,
-    MID_LEFT
+    MID_LEFT,
+    MID_TOP
 };
 class Camera;
 
@@ -27,3 +29,11 @@ void showImage(std::string name, cv::Mat image);
 std::vector<std::string> getImagesPathsFromFolder(std::string folderPath);
 
 std::vector<cv::Point2i> bresenham(cv::Point2i point1, cv::Point2i point2);
+
+cv::Mat getIdealRef();
+
+void saveImage(std::string filename, cv::Mat image);
+
+cv::Mat loadImage(std::string filename);
+
+double calculateAverageError(cv::Mat &image);
