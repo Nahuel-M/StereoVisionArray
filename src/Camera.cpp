@@ -25,10 +25,10 @@ Point2i Camera::project(Point3d Pos3D)
 Point3d Camera::inv_project(Point2i pixel)
 {
 	Point3d vector{
-		pixel.x * pixel_size,
-		pixel.y * pixel_size,
-		f
+		pixel.x * pixel_size / f,
+		pixel.y * pixel_size / f,
+		1
 	};
-	return vector / norm(vector);
+	return vector;
 
 }
