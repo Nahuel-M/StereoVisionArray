@@ -12,18 +12,22 @@ using namespace cv;
 double f = 0.05;
 double sensor_size = 0.036;
 
-Mat generateDepthFromImages(std::vector<Mat> &images, const std::vector<std::array<int, 2>> &pairs, std::vector<Camera> &cameras);
+Mat generateDepthFromImages(std::vector<Mat> &images, const std::vector<std::array<int, 2>> &pairs, std::vector<Camera> &cameras, int windowSize);
 
 void CallBackFunc(int event, int x, int y, int flags, void* param)
 {
     Mat* ptrImage = (Mat*)param;
     if (event == EVENT_LBUTTONDOWN)
     {
-        std::cout << "at position (" << x << ", " << y << ")" << ": "<< ptrImage->at<double>(Point(x,y)) << std::endl;
+        if (ptrImage->type() == 6)
+            std::cout << "at position (" << x << ", " << y << ")" << ": "<< ptrImage->at<double>(Point(x,y)) << std::endl;
+        else if (ptrImage->type() == 0)
+            std::cout << "at position (" << x << ", " << y << ")" << ": " << ptrImage->at<unsigned char>(Point(x, y)) << std::endl;
     }
 
 
 }
+
 int main()
 {
     // Images
@@ -32,7 +36,7 @@ int main()
     std::vector<Mat> images;
     for (int i = 0; i < files.size(); i++) {
         images.push_back(imread(files[i], IMREAD_GRAYSCALE));
-        resize(images.back(), images.back(), Size(), 0.25, 0.25);
+        resize(images.back(), images.back(), Size(), 0.5, 0.5);
     }
 
     // Camera parameters
@@ -52,80 +56,54 @@ int main()
             cameras.push_back(Camera(f, Point3d{ -0.1 + x * 0.05, -0.1 + y * 0.05, -0.75 }, pixelSize));
         }
     }
-
-    // Pairs
-    std::vector< std::vector<std::array<int, 2>> > groups = getGroups(cameras, "CHESS");
-    std::vector<Mat> perspectives;
-    std::vector<Mat> projected;
-    Mat example = loadImage("perspectivesR025K20\\cam0");
-    Mat combined = Mat{ example.size(), example .type() };
-    Mat divides = Mat{ example.size(), CV_8U, Scalar(0)};
-    int i = 0;
-    for (auto group : groups) {
-        perspectives.push_back(generateDepthFromImages(images, group, cameras));
-        //perspectives.push_back( loadImage("perspectivesR025K20\\cam" + std::to_string(group.back()[0])) );
-        projected.push_back( shiftPerspective2(cameras[group.back()[0]], cameras[12], perspectives[i]) );
-        combined += projected.back();
-        divides = divides + (projected.back() > 0.1)/255;
-        i++;
-        showImage(std::to_string(group.back()[0]), perspectives.back());
-        waitKey(0);
-        //saveImage("cam" + std::to_string(group.back()[0]), perspectives.back());
+    Mat ref = getIdealRef();
+    Mat mask = getFaceMask();
+    for (int i = 11; i < 82; i += 4) {
+        Mat leftGroup = generateDepthFromImages(images, getCameraPairs(cameras, MID_LEFT), cameras, i);
+        resize(leftGroup, leftGroup, ref.size());
+        Mat diff = ref - leftGroup;
+        diff = diff - mean(diff, mask);
+        //Mat diffStore;
+        //diff.copyTo(diffStore, mask);
+        //imshow("Diff", diffStore * 150);
+        //waitKey(0);
+        Mat mean, stdDev;
+        meanStdDev(diff, mean, stdDev, mask);
+        std::cout << i << " " << stdDev.at<double>(0,0) << " " << mean.at<double>(0,0) << std::endl;
     }
-    Mat plot; 
-    normalize(combined, plot);
-    imshow("CombinedPre", plot*255);
-    waitKey(0);
-
-    //std::cout << combined << std::endl;
-    cv::divide(combined, divides, combined, 1, CV_64F) ; 
-    //std::cout << combined.size() << ", " << divides.size() << std::endl;
-
-    bitwise_and(combined, 0, combined, (divides == 0));
-    //combined = combined & (divides > 0);
-
-    //std::cout << combined << std::endl;
-    normalize(combined, plot);
-    imshow("CombinedPost", plot * 255);
-    waitKey(0);
-
-
-    //Mat leftGroup = generateDepthFromImages(images, getCameraPairs(cameras, CROSS, 10), cameras);
+    
     //saveImage("LeftGroupR025K10", leftGroup);
 
 
-    Mat ref = getIdealRef();
+    
     namedWindow("Rec", WINDOW_NORMAL);
     resizeWindow("Rec", 710, 540);
     Mat refC;
     showImage("ref", ref);
     //showImage("im", im);
-    Mat diff = abs(ref - combined);
-    Mat diffStore;
-    diff.copyTo(diffStore, (ref < 1));
+    //Mat diff = abs(ref - combination);
     //std::cout << calculateAverageError(diff) << std::endl;
     //saveImage("DifferenceCrossR100K20", diff);
     namedWindow("Diff", WINDOW_NORMAL);
     resizeWindow("Diff", 710, 540);
-    imshow("Diff", diffStore*150);
+    //imshow("Diff", diffStore*150);
     //setMouseCallback("Diff", CallBackFunc, NULL);
     waitKey(0);
     return 0;
     
 }
 
-Mat generateDepthFromImages(std::vector<Mat>& images, const std::vector<std::array<int, 2>>& pairs, std::vector<Camera>& cameras) {
+Mat generateDepthFromImages(std::vector<Mat>& images, const std::vector<std::array<int, 2>>& pairs, std::vector<Camera>& cameras, int windowSize) {
 
     //Mat mask = getFaceCircle(images[12]);
     Size resolution = Size{ images[12].cols, images[12].rows };
     Point2i halfRes = resolution / 2;
     double pixelSize = sensor_size / resolution.width;
 
-    int kernelSize = 10;
+    int kernelSize = (windowSize - 1) / 2;
     Mat depth = Mat{ images[12].size(), CV_64FC1 };
     int pairCount = pairs.size();
     for (int x = kernelSize; x < resolution.width - kernelSize; x++) {
-        std::cout << x << std::endl;
         for (int y = kernelSize; y < (resolution.height - kernelSize); y++) {
             //if (mask.at<uint8_t>(Point(x, y)) == 0) continue;
 
