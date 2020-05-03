@@ -1,0 +1,26 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/.vs
+/Debug
+/Images
+/perspectivesR025K20
+/x64
+/TopGroupR025K10
+/shape_predictor_68_face_landmarks.dat
+/output.txt
+/opencv_world420d.lib
+/opencv_world420.lib
+/MidTopR100K20
+/MidTopR050K20
+/MidLeftR100K20
+/MidLeftR050K20
+/LeftGroupR025K10
+/JumpCrossR050K10
+/idealRef.yml
+/idealRef.png
+/DifferenceCrossR100K20
+/CrossR100K20
+/CrossR050K20
+/CrossR050K10

@@ -163,11 +163,13 @@
     <ClCompile Include="src\CameraStereoVision.cpp" />
     <ClCompile Include="src\dlibFaceSelect.cpp" />
     <ClCompile Include="src\functions.cpp" />
+    <ClCompile Include="src\generateIdealReference.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\Camera.h" />
     <ClInclude Include="include\dlibFaceSelect.h" />
     <ClInclude Include="include\functions.h" />
+    <ClInclude Include="include\generateIdealReference.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="CameraStereoVision.rc" />

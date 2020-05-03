@@ -22,7 +22,7 @@ void CallBackFunc(int event, int x, int y, int flags, void* userdata)
 }
 int main()
 {
-    //generateDepthFromImages();
+    generateDepthFromImages();
     //saveReference("D:\\Documents\\Uni\\Thesis\\Head_model\\HeadToScale.obj");
 
 
@@ -78,15 +78,16 @@ void generateDepthFromImages() {
     }
 
     // Pairs
-    std::vector<std::array<int, 2>> pairs = getCameraPairs(cameras, CROSS);
+    std::vector<std::array<int, 2>> pairs = getCameraPairs(cameras, MID_LEFT);
 
+    int pairCount = pairs.size();
     int kernelSize = 10;
     Mat depth = Mat{ images[12].size(), CV_64FC1 };
 
-    for (int x = kernelSize; x < resolution.width - kernelSize; x++) {
+    for (int y = kernelSize; y < (resolution.height - kernelSize); y++) {
         //for (int x = resolution.width/2; x < resolution.width - kernelSize; x++) {
-        std::cout << x << std::endl;
-        for (int y = kernelSize; y < (resolution.height - kernelSize); y++) {
+        std::cout << y << std::endl;
+        for (int x = kernelSize; x < resolution.width - kernelSize; x++) {
             //for (int y = resolution.height/2; y < (resolution.height - kernelSize);  y++) {
             if (mask.at<uint8_t>(Point(x, y)) == 0) continue;
 
@@ -137,7 +138,7 @@ void generateDepthFromImages() {
                 //float err = *std::max_element(error.begin(), error.end());
                 //std::cout << "Max value: " << err << " at: " << maxIndex << std::endl;
                 Point2i pixel = pixels[maxIndex];
-                depth.at<double>(Point(x, y)) = depth.at<double>(Point(x, y)) + camDistance * f / (pixelSize * norm(pixel - Point2i{ x, y })) / 4;
+                depth.at<double>(Point(x, y)) = depth.at<double>(Point(x, y)) + camDistance * f / (pixelSize * norm(pixel - Point2i{ x, y })) / pairCount;
                 //std::cout << "Depth: " << camDistance * f / (pixelSize * norm(pixel - Point2i{ x, y })) << std::endl;
                 //imshow("Depth", depth);
                 //im2cop.at<uint8_t>(pixel) = 255;
@@ -155,7 +156,7 @@ void generateDepthFromImages() {
     //namedWindow("Depth", 1);
     //setMouseCallback("My Window", CallBackFunc, NULL);
     showImage("Depth", (depth - 0.5) * 3.333);
-    saveImage("CrossR050K10", depth);
+    //saveImage("CrossR050K10", depth);
     waitKey(0);
 
 }
