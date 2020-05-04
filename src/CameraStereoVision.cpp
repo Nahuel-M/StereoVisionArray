@@ -124,9 +124,9 @@ Mat generateDepthFromImages(std::vector<Mat>& images, const std::vector<std::arr
     int kernelSize = 10;
     Mat depth = Mat{ images[12].size(), CV_64FC1 };
     int pairCount = pairs.size();
-    for (int x = kernelSize; x < resolution.width - kernelSize; x++) {
-        std::cout << x << std::endl;
-        for (int y = kernelSize; y < (resolution.height - kernelSize); y++) {
+    for (int y = kernelSize; y < (resolution.height - kernelSize); y++) {
+        std::cout << y << std::endl;
+        for (int x = kernelSize; x < resolution.width - kernelSize; x++) {
             //if (mask.at<uint8_t>(Point(x, y)) == 0) continue;
 
             for (auto pair : pairs) {
