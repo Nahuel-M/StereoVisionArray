@@ -16,7 +16,7 @@ struct package
 void showCalculation(std::vector<Camera> &cameras, std::vector<Mat> &images, int x, int y)
 {
     Mat ref = getIdealRef();
-    std::vector<std::array<int,2>> pairs = getCameraPairs(cameras, MID_LEFT);
+    std::vector<std::array<int,2>> pairs = getCameraPairs(cameras, CROSS);
     int kernelSize = 10;
 
     double f = 0.05;
@@ -74,7 +74,13 @@ void showCalculation(std::vector<Camera> &cameras, std::vector<Mat> &images, int
         //imshow("im2", im2cop);
     }
     std::cout << ref.at<double>(Point(x, y)) << std::endl;
-    matplotlibcpp::axvline(ref.at<double>(Point(x,y)), 0.0, 1.0, { {"color", "red"}, {"linestyle", "--"} });
+    double truth = ref.at<double>(Point(x, y));
+    //matplotlibcpp::ylim(0.9, 1.05);
+    matplotlibcpp::xlim(0.5, 1.0);
+    matplotlibcpp::xlabel("Depth (m)");
+    matplotlibcpp::ylabel("Normalized Cross Correlation");
+
+    matplotlibcpp::axvline(truth, 0.0, 1.0, { {"color", "red"}, {"linestyle", "--"} });
     matplotlibcpp::show();
 
 }
