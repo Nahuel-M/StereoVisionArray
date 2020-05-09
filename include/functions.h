@@ -19,7 +19,7 @@ enum pairType {
 };
 class Camera;
 
-cv::Mat shiftPerspective(Camera inputCam, Camera outputCam, cv::Mat depthMap);
+cv::Mat shiftPerspective(Camera inputCam, Camera outputCam, cv::Mat depthMap, cv::Mat mask);
 
 cv::Mat shiftPerspective2(Camera inputCam, Camera outputCam, cv::Mat depthMap);
 

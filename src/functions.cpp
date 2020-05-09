@@ -9,6 +9,40 @@
 using namespace cv;
 
 
+cv::Mat shiftPerspective(Camera inputCam, Camera outputCam, cv::Mat depthMap, cv::Mat mask)
+{
+    Mat shiftedDepthMap = Mat{ depthMap.size() , depthMap.type() };
+    double preMultX = (inputCam.pos3D.x - outputCam.pos3D.x) * inputCam.f / inputCam.pixel_size;
+    double preMultY = (inputCam.pos3D.y - outputCam.pos3D.y) * inputCam.f / inputCam.pixel_size;
+    Point2i halfRes = depthMap.size() / 2;
+    for (int x = 0; x < shiftedDepthMap.cols; x++) {
+        for (int y = 0; y < shiftedDepthMap.rows; y++) {
+            
+            Point3d vec = outputCam.inv_project(Point2i{ x, y }-halfRes);
+            Point3d p1 = outputCam.pos3D + (vec * 0.5);
+            Point3d p2 = outputCam.pos3D + vec;
+            Point2i pixel1 = inputCam.project(p1) + halfRes;
+            Point2i pixel2 = inputCam.project(p2) + halfRes;
+
+            std::vector<Point2i> pixels = bresenham(pixel1, pixel2);
+            std::vector<float> error;
+
+            for (auto p : pixels) {
+                Rect selector = Rect{ p - Point(kernelSize, kernelSize), p + Point(kernelSize, kernelSize) };
+                Mat selection = images[pair[1]](selector);
+                Mat result{ CV_32FC1 };
+                error.push_back(getAbsDiff(selection, kernel));
+            }
+
+            int maxIndex = std::distance(error.begin(), std::min_element(error.begin(), error.end()));
+
+            Point2i pixel = pixels[maxIndex];
+            depth.at<double>(Point(x, y)) = depth.at<double>(Point(x, y)) + preMult / (norm(pixel - Point2i{ x, y }));
+
+        }
+    }
+}
+
 cv::Mat shiftPerspective2(Camera inputCam, Camera outputCam, cv::Mat depthMap)
 {
     Mat shiftedDepthMap = Mat{ depthMap.size() , depthMap.type() };
