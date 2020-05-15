@@ -8,42 +8,75 @@
 
 using namespace cv;
 
-
-cv::Mat shiftPerspective(Camera inputCam, Camera outputCam, cv::Mat depthMap, cv::Mat mask)
+cv::Mat improveWithDisparity(cv::Mat& disparity, cv::Mat centerImage, std::vector<cv::Mat> &images, std::vector<std::array<Camera, 2>> &cameras, int windowSize)
 {
-    Mat shiftedDepthMap = Mat{ depthMap.size() , depthMap.type() };
-    double preMultX = (inputCam.pos3D.x - outputCam.pos3D.x) * inputCam.f / inputCam.pixel_size;
-    double preMultY = (inputCam.pos3D.y - outputCam.pos3D.y) * inputCam.f / inputCam.pixel_size;
-    Point2i halfRes = depthMap.size() / 2;
-    for (int x = 0; x < shiftedDepthMap.cols; x++) {
-        for (int y = 0; y < shiftedDepthMap.rows; y++) {
-            
-            Point3d vec = outputCam.inv_project(Point2i{ x, y }-halfRes);
-            Point3d p1 = outputCam.pos3D + (vec * 0.5);
-            Point3d p2 = outputCam.pos3D + vec;
-            Point2i pixel1 = inputCam.project(p1) + halfRes;
-            Point2i pixel2 = inputCam.project(p2) + halfRes;
-
-            std::vector<Point2i> pixels = bresenham(pixel1, pixel2);
-            std::vector<float> error;
-
-            for (auto p : pixels) {
-                Rect selector = Rect{ p - Point(kernelSize, kernelSize), p + Point(kernelSize, kernelSize) };
-                Mat selection = images[pair[1]](selector);
-                Mat result{ CV_32FC1 };
-                error.push_back(getAbsDiff(selection, kernel));
+    Mat mask = getFaceMask(centerImage);
+    Size resolution = disparity.size();
+    Mat improvedDisparity{ resolution, disparity.type() };
+    Mat newDisparity{ disparity.size(), disparity.type() };
+    int kernelSize = (windowSize - 1) / 2;
+    for (int c = 0; c < cameras.size(); c++) {
+        std::array<Camera,2> cam = cameras[c];
+        imshow("Disparity", disparity);
+        imshow("Before", images[c]);
+        Mat shifted = shiftPerspectiveWithDisparity(cam[0], cam[1], disparity, images[c]);
+        Point2d distance = Point2d{ cam[0].pos3D.x - cam[1].pos3D.x, cam[0].pos3D.y - cam[1].pos3D.y };
+        distance.x = distance.x / norm(distance.x) && (distance.x>0.001);
+        distance.y = distance.y / norm(distance.y) && (distance.y > 0.001);
+        std::cout << distance << std::endl;
+        for (int y = 0; y < centerImage.rows; y++) {
+            for (int x = 0; x < centerImage.cols; x++) {
+                if (mask.at<uint8_t>(Point(x, y)) == 0) continue;
+                Mat window = centerImage(Rect{ Point2i{x - kernelSize, y - kernelSize}, Point2i{x + kernelSize, y + kernelSize} });
+                std::vector<double> error;
+                for (int p = 0; p <= 10; p++) {
+                    Point2i newP = Point2i{ x, y } + (Point2i) distance * (p - 5);
+                    Mat compWindow = shifted(Rect{ newP - Point2i{kernelSize, kernelSize}, newP + Point2i{kernelSize, kernelSize} });
+                    error.push_back(getAbsDiff(compWindow, window));
+                }
+                int maxIndex = std::distance(error.begin(), std::min_element(error.begin(), error.end()));
+                newDisparity.at<unsigned char>(y, x) = disparity.at<unsigned char>(y, x) + (maxIndex - 5)*(distance.x+distance.y);
             }
-
-            int maxIndex = std::distance(error.begin(), std::min_element(error.begin(), error.end()));
-
-            Point2i pixel = pixels[maxIndex];
-            depth.at<double>(Point(x, y)) = depth.at<double>(Point(x, y)) + preMult / (norm(pixel - Point2i{ x, y }));
-
         }
+
+        imshow("Shifted", shifted);
+        waitKey(0);
     }
+    double camDistance = norm(cameras[0][0].pos3D - cameras[0][1].pos3D);
+    Mat pixSizeDisp;
+    //multiply(newDisparity, cameras[0][0].pixel_size, pixSizeDisp, 1, 6);
+    //improvedDisparity = camDistance * cameras[0][0].f / (pixSizeDisp);
+    //std::cout << "Test" << std::endl;
+
+    return newDisparity;
 }
 
-cv::Mat shiftPerspective2(Camera inputCam, Camera outputCam, cv::Mat depthMap)
+
+cv::Mat shiftPerspectiveWithDisparity(Camera& inputCam, Camera& outputCam, cv::Mat& disparity, cv::Mat& image)
+{
+    Mat shiftedImage = Mat{ image.size() , image.type() };
+    double camDistance = norm(inputCam.pos3D - outputCam.pos3D);
+    //improvedDepth = camDistance * outputCam.f / (pixSizeDisp);
+
+    double preMultX = (inputCam.pos3D.x - outputCam.pos3D.x) / norm(inputCam.pos3D - outputCam.pos3D);
+    double preMultY = (inputCam.pos3D.y - outputCam.pos3D.y) / norm(inputCam.pos3D - outputCam.pos3D);
+    for (int y = 0; y < shiftedImage.rows; y++) {
+        for (int x = 0; x < shiftedImage.cols; x++) {
+            double disp = disparity.at<unsigned char>(y, x);
+            if (disp == 0) {
+                continue;
+            }
+            int shiftedX = disp * preMultX + x;
+            int shiftedY = disp * preMultY + y;
+            if (shiftedY >= disparity.rows || shiftedY < 0 || shiftedX >= disparity.cols || shiftedX < 0)
+                continue;
+            shiftedImage.at<unsigned char>(y, x) = image.at<unsigned char>(shiftedY, shiftedX);
+        }
+    }
+    return shiftedImage;
+}
+
+cv::Mat shiftPerspective2(Camera inputCam, Camera outputCam, cv::Mat &depthMap)
 {
     Mat shiftedDepthMap = Mat{ depthMap.size() , depthMap.type() };
     double preMultX = (inputCam.pos3D.x - outputCam.pos3D.x) * inputCam.f / inputCam.pixel_size;
@@ -68,6 +101,8 @@ cv::Mat shiftPerspective2(Camera inputCam, Camera outputCam, cv::Mat depthMap)
     //cv::waitKey(0);
     return shiftedDepthMap;
 }
+
+
 
 std::vector< std::vector<std::array<int, 2>> > getGroups(std::vector<Camera> &cameras, std::string groupType)
 {
@@ -187,13 +222,16 @@ void CallBackFuncs(int event, int x, int y, int flags, void* param)
     Mat* ptrImage = (Mat*)param;
     if (event == EVENT_LBUTTONDOWN)
     {
-        std::cout << "at position (" << x << ", " << y << ")" << ": " << ptrImage->at<unsigned char>(Point(x, y)) << std::endl;
+        if(ptrImage->type() == 0)
+            std::cout << "at position (" << x << ", " << y << ")" << ": " << ptrImage->at<unsigned char>(Point(x, y)) << std::endl;
+        else
+            std::cout << "at position (" << x << ", " << y << ")" << ": " << ptrImage->at<double>(Point(x, y)) << std::endl;
     }
 
 
 }
 
-void showImage(std::string name, Mat &image) {
+void showImage(std::string name, Mat image) {
     namedWindow(name, WINDOW_NORMAL);
     resizeWindow(name, 710, 540);
     imshow(name, image);
@@ -311,6 +349,6 @@ double calculateAverageError(cv::Mat &image)
 {
     std::string folder = "Images";
     std::vector<std::string> files = getImagesPathsFromFolder(folder);
-    Mat mask = getFaceMask();
+    Mat mask = getFaceMask(image);
     return cv::mean(image, mask)[0];
 }

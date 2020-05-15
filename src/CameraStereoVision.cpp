@@ -10,15 +10,15 @@ using namespace cv;
 int main()
 {
     // Images
-    std::string folder = "Images";
+    std::string folder = "Renders2";
     std::vector<std::string> files = getImagesPathsFromFolder(folder);
     std::vector<Mat> images;
     for (int i = 0; i < files.size(); i++) {
         images.push_back(imread(files[i], IMREAD_GRAYSCALE));
-        //resize(images.back(), images.back(), Size(), 0.5, 0.5);
+        resize(images.back(), images.back(), Size(), 0.5, 0.5);
     }
 
-    Mat mask = getFaceMask(images[12]);
+    Mat mask = getFaceMask(images.back());
 
     // Camera parameters
     double f = 0.05;
@@ -43,22 +43,19 @@ int main()
 
     int kernelSize = 20;
     Mat depth = Mat{ images[12].size(), CV_64FC1};
+    Mat disparity = Mat{ images[12].size(), CV_8UC1};
+    double camDistance = norm(cameras[pairs[0][0]].pos3D - cameras[pairs[0][1]].pos3D);
 
-    for (int x = kernelSize; x < resolution.width - kernelSize; x++) {
-    //for (int x = resolution.width/2; x < resolution.width - kernelSize; x++) {
-        std::cout << x << std::endl;
-        for (int y = kernelSize; y < (resolution.height - kernelSize);  y++) {
+    for (int y = kernelSize; y < (resolution.height - kernelSize); y++) {
         //for (int y = resolution.height/2; y < (resolution.height - kernelSize);  y++) {
+        for (int x = kernelSize; x < resolution.width - kernelSize; x++) {
+            //for (int x = resolution.width/2; x < resolution.width - kernelSize; x++) {
             if (mask.at<uint8_t>(Point(x, y)) == 0) continue;
 
             for (auto pair : pairs) {
-                double camDistance = norm(cameras[pair[0]].pos3D - cameras[pair[1]].pos3D);
+                
                 Mat kernel = images[pair[0]](Rect{ Point2i{x - kernelSize, y - kernelSize}, Point2i{x + kernelSize, y + kernelSize} });
-                //imshow("Kernel", kernel);
-                //Mat im1cop = images[pair[0]].clone();
-                //im1cop.at<uint8_t>(Point(x,y)) = 255;
-                //Mat im2cop = images[pair[1]].clone();
-                //imshow("im1", im1cop);
+
 
                 Point3d vec = cameras[pair[0]].inv_project(Point2i{ x, y }-halfRes);
                 Point3d p1 = cameras[pair[0]].pos3D + (vec * 0.5);
@@ -74,49 +71,54 @@ int main()
                 }
 
                 std::vector<Point2i> pixels = bresenham(pixel1, pixel2);
-                std::vector<float> error;
+                std::vector<double> error;
 
                 for (auto p : pixels) {
                     Rect selector = Rect{ p - Point(kernelSize, kernelSize), p + Point(kernelSize, kernelSize) };
                     Mat selection = images[pair[1]](selector);
                     Mat result{ CV_32FC1 };
-                    //matchTemplate(selection, kernel, result, TM_CCORR_NORMED);
-                    //error.push_back(result.at<float>(0, 0));
-                    error.push_back(getAbsDiff(selection, kernel));
-                    //depthS.push_back(camDistance * f / (pixelSize * norm(p - Point2i{ x, y })));
 
-                    //im2cop(selector) = 30;
-                    //im2cop.at<uint8_t>(p) = 0;
-                    //std::cout << result.at<float>(0, 0) << std::endl;
-                    //imshow("Selection", selection);
-                    //waitKey(0);
+                    error.push_back(getAbsDiff(selection, kernel));
+
                 }
-                //imshow("im2", im2);
-                //waitKey(0);
-                //matplotlibcpp::plot(depthS, error);
+
                 int maxIndex = std::distance(error.begin(), std::min_element(error.begin(), error.end()));
-                //std::cout << "MaxValue: " << error[maxIndex] << " at " << maxIndex << std::endl;
-                //float err = *std::max_element(error.begin(), error.end());
-                //std::cout << "Max value: " << err << " at: " << maxIndex << std::endl;
+
                 Point2i pixel = pixels[maxIndex];
-                depth.at<double>(Point(x, y)) = depth.at<double>(Point(x, y)) + camDistance * f / (pixelSize * norm(pixel - Point2i{ x, y }));
-                //std::cout << "Depth: " << camDistance * f / (pixelSize * norm(pixel - Point2i{ x, y })) << std::endl;
-                //imshow("Depth", depth);
-                //im2cop.at<uint8_t>(pixel) = 255;
-                //Mat kernel2 = im2(Rect{ Point2i{pixel.x - kernelSize, pixel.y - kernelSize}, Point2i{pixel.x + kernelSize, pixel.y + kernelSize} });
-                //imshow("Ker1", kernel);
-                //imshow("Ker2", kernel2);
-                //imshow("im2", im2cop);
-                //waitKey();
+                //std::cout << norm(pixel - Point2i{ x, y }) << std::endl;
+                disparity.at<unsigned char>(Point(x, y)) = (int) norm(pixel - Point2i{ x, y });
+
+                
             }
-            //matplotlibcpp::show();
 
         }
-        //std::cout << x << std::endl;
     }
+    //imshow("Disp", disparity);
+
+    Mat pixSizeDisp;
+    multiply(disparity, pixelSize, pixSizeDisp, 1, 6);
+    depth =  camDistance * f / (pixSizeDisp);
+    std::cout << "Test" << std::endl;
+
     namedWindow("Depth", 1);
     //setMouseCallback("My Window", CallBackFunc, NULL);
-    imshow("Depth", depth);
+    showImage("Depth", depth);
+    //waitKey(0);
+    Mat ref = getIdealRef();
+    Mat depth2;
+    resize(depth, depth2, ref.size());
+    Mat error = (depth2 - ref) * 50;
+    showImage("Error", error);
+    std::vector<Mat> inpImages = { images[pairs[0][1]] };
+    std::vector < std::array<Camera, 2> > inpCameras = { {cameras[pairs[0][0]], cameras[pairs[0][1]]} };
+    Mat improvedDepth = improveWithDisparity(disparity, images[pairs[0][0]], inpImages, inpCameras, 21);
+    namedWindow("Depth2", 1);
+    showImage("Depth2", improvedDepth);
+    waitKey(0);
+    resize(improvedDepth, depth2, ref.size());
+    error = (depth2 - ref) * 50;
+    showImage("Error2", error);
+
     waitKey(0);
 }
 

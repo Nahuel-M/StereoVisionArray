@@ -8,13 +8,13 @@
 
 #include <opencv2/imgproc.hpp>
 
-cv::Mat getFaceMask()
+cv::Mat getFaceMask(cv::Mat &sampleImage)
 {
     std::string folder = "Images";
     std::vector<std::string> files = getImagesPathsFromFolder(folder);
     std::vector<cv::Mat> images;
     cv::Mat image = cv::imread(files[12], cv::IMREAD_GRAYSCALE);
-    resize(image, image, cv::Size(), 0.25, 0.25);
+    resize(image, image, sampleImage.size());
 
     dlib::frontal_face_detector detector = dlib::get_frontal_face_detector();
     dlib::shape_predictor sp;

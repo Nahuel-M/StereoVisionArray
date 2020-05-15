@@ -13,9 +13,9 @@ public:
 	cv::Point2i project(cv::Point3d Pos3D);
 	cv::Point3d inv_project(cv::Point2i pixel);
 
+	double f;
+	double pixel_size;
 
 
 private:
-	double f;
-	double pixel_size;
 };

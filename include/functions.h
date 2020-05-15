@@ -19,9 +19,11 @@ enum pairType {
 };
 class Camera;
 
-cv::Mat shiftPerspective(Camera inputCam, Camera outputCam, cv::Mat depthMap, cv::Mat mask);
+cv::Mat improveWithDisparity(cv::Mat& disparity, cv::Mat centerImage, std::vector<cv::Mat>& images, std::vector<std::array<Camera, 2>>& cameras, int windowSize);
 
-cv::Mat shiftPerspective2(Camera inputCam, Camera outputCam, cv::Mat depthMap);
+cv::Mat shiftPerspective2(Camera inputCam, Camera outputCam, cv::Mat &depthMap);
+
+cv::Mat shiftPerspectiveWithDisparity(Camera& inputCam, Camera& outputCam, cv::Mat& disparity, cv::Mat& image);
 
 std::vector<std::vector<std::array<int, 2>>> getGroups(std::vector<Camera>& cameras, std::string groupType);
 
@@ -36,7 +38,7 @@ std::vector<std::array<int, 2>> getCameraPairs(const std::vector<Camera>& camera
 double getAbsDiff(cv::Mat& mat1, cv::Mat& mat2);
 
 
-void showImage(std::string name, cv::Mat& image);
+void showImage(std::string name, cv::Mat image);
 
 std::vector<std::string> getImagesPathsFromFolder(std::string folderPath);
 

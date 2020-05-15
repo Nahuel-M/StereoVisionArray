@@ -1,0 +1,16 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/.vs
+/Debug/CameraSt.864735C9.tlog/CameraStereoVision.lastbuildstate
+/Debug
+/Images
+/Renders2
+/x64/Release
+/shape_predictor_68_face_landmarks.dat
+/python27.dll
+/opencv_world420.dll
+/idealRef.yml
+/idealRef.png
+/CameraStereoVision.rc

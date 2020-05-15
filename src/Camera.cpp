@@ -15,7 +15,7 @@ Camera::~Camera()
 Point2i Camera::project(Point3d Pos3D)
 {
 	Point2i pixel;
-	float mult = f / (Pos3D.z - this->pos3D.z) / pixel_size;
+	double mult = f / (Pos3D.z - this->pos3D.z) / pixel_size;
 	pixel.x = int( (Pos3D.x - this->pos3D.x) * mult );
 	pixel.y = int( (Pos3D.y - this->pos3D.y) * mult );
 	return pixel;
