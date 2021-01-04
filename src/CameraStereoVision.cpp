@@ -3,122 +3,202 @@
 #include "Camera.h"
 #include "functions.h"
 #include "dlibFaceSelect.h"
-#include "matplotlibcpp.h"
-
+#include "plotting.h"
+namespace plt = matplotlibcpp;
 using namespace cv;
 
 int main()
 {
-    // Images
-    std::string folder = "Renders2";
-    std::vector<std::string> files = getImagesPathsFromFolder(folder);
-    std::vector<Mat> images;
-    for (int i = 0; i < files.size(); i++) {
-        images.push_back(imread(files[i], IMREAD_GRAYSCALE));
-        resize(images.back(), images.back(), Size(), 0.5, 0.5);
-    }
+    std::vector<double> heat;
+    std::vector<double> err;
 
-    Mat mask = getFaceMask(images.back());
+    /// Images
+    std::vector<cv::Mat> images = getImages("Renders2", 0.5);
 
-    // Camera parameters
-    double f = 0.05;
-    double sensor_size = 0.036;
-    Size resolution = Size{ images[12].cols, images[12].rows };
-    std::cout << "Image Resolution: " << resolution << std::endl;
-    Point2i halfRes = resolution / 2;
-    Point2i centerPixel = resolution / 2;
-    double pixelSize = sensor_size / resolution.width;
-    std::cout << "Pixel Size: " << pixelSize << std::endl;
+    /// Cameras
+    std::vector<Camera> cameras = getCameras(images.back().size());
 
-    std::vector<Camera> cameras;
-    for (int y = 0; y < 5; y++) {
+    /// Mask
+    std::vector<cv::Point2i> maskPoints = getFaceMaskPoints(images.back());
+    Mat centerMask = drawMask(images.back(), maskPoints);
+    Mat centerDisparity = getDisparityFromPairSGM(images[12], images[13], centerMask, cameras[12], cameras[13]);
+    Mat centerDepth = disparity2Depth(centerDisparity, cameras[12], cameras[13]);
+    std::vector<cv::Point3d> maskPoints3D = Points2DtoPoints3D(centerDepth, maskPoints, cameras[12]);
 
-        for (int x = 0; x < 5; x++) {
-            cameras.push_back(Camera(f, Point3d{ -0.1 + x * 0.05, -0.1 + y * 0.05, -0.75 }, pixelSize));
-        }
-    }
+    /// Pairs
+    std::vector<std::array<int,2>> pairs = getCameraPairs(cameras, MID_BOTTOM);
 
-    // Pairs
-    std::vector<std::array<int,2>> pairs = getCameraPairs(cameras, MID_LEFT);
+    Mat reference = getIdealRef();
+    Mat disparityRef = depth2Disparity(reference, cameras[12], cameras[11]);
+    Mat disparityResize;
+    Mat combinedDisparity{ images[0].size(), CV_16U, Scalar(0) };
+    Mat combinedHeatmap{ images[0].size(), CV_32F, Scalar(0) };
 
-    int kernelSize = 20;
-    Mat depth = Mat{ images[12].size(), CV_64FC1};
-    Mat disparity = Mat{ images[12].size(), CV_8UC1};
-    double camDistance = norm(cameras[pairs[0][0]].pos3D - cameras[pairs[0][1]].pos3D);
+    for (int c = 0; c < 25; c += 2)
+    {
+        /// Create mask from current camera perspective
+        std::vector<cv::Point2i> maskPoints = Points3DtoPoints2D(maskPoints3D, cameras[c]);
+        Mat mask = drawMask(images.back(), maskPoints);
 
-    for (int y = kernelSize; y < (resolution.height - kernelSize); y++) {
-        //for (int y = resolution.height/2; y < (resolution.height - kernelSize);  y++) {
-        for (int x = kernelSize; x < resolution.width - kernelSize; x++) {
-            //for (int x = resolution.width/2; x < resolution.width - kernelSize; x++) {
-            if (mask.at<uint8_t>(Point(x, y)) == 0) continue;
-
-            for (auto pair : pairs) {
-                
-                Mat kernel = images[pair[0]](Rect{ Point2i{x - kernelSize, y - kernelSize}, Point2i{x + kernelSize, y + kernelSize} });
+        std::vector<std::array<int, 2>> pairs = getCameraPairs(cameras, CROSS, c);
+        Mat interimDisparity{ images[0].size(), CV_32F, Scalar(0) };
+        Mat weight{ images[0].size(), CV_32F, Scalar(0) };
+        std::vector<Mat> subDisparities;
+        std::vector<Mat> weightedSubDisparities;
+        std::vector<Mat> weights;
 
 
-                Point3d vec = cameras[pair[0]].inv_project(Point2i{ x, y }-halfRes);
-                Point3d p1 = cameras[pair[0]].pos3D + (vec * 0.5);
-                Point3d p2 = cameras[pair[0]].pos3D + vec;
-                Point2i pixel1 = cameras[pair[1]].project(p1) + halfRes;
-                Point2i pixel2 = cameras[pair[1]].project(p2) + halfRes;
+        Mat deltaH = getBlurredSlope(images[c], 0);
+        Mat deltaV = getBlurredSlope(images[c], 1);
+        Mat nDH = deltaH / (deltaH + deltaV);
+        Mat nDV = deltaV / (deltaH + deltaV);
+        //Mat nDV{deltaH.size(), deltaH.type(), Scalar(1) };
+        //Mat nDH{deltaH.size(), deltaH.type(), Scalar(1) };
+        for (auto p : pairs) 
+        {
+            /// Get disparity
+            subDisparities.push_back(getDisparityFromPairSGM(images[p[0]], images[p[1]], mask, cameras[p[0]], cameras[p[1]]));
 
-                if (pixel1.x<kernelSize || pixel1.y < kernelSize || pixel1.x > resolution.width - kernelSize || pixel1.y > resolution.height - kernelSize) {
-                    continue;
-                }
-                if (pixel2.x<kernelSize || pixel2.y < kernelSize || pixel2.x > resolution.width - kernelSize || pixel2.y > resolution.height - kernelSize) {
-                    continue;
-                }
-
-                std::vector<Point2i> pixels = bresenham(pixel1, pixel2);
-                std::vector<double> error;
-
-                for (auto p : pixels) {
-                    Rect selector = Rect{ p - Point(kernelSize, kernelSize), p + Point(kernelSize, kernelSize) };
-                    Mat selection = images[pair[1]](selector);
-                    Mat result{ CV_32FC1 };
-
-                    error.push_back(getAbsDiff(selection, kernel));
-
-                }
-
-                int maxIndex = std::distance(error.begin(), std::min_element(error.begin(), error.end()));
-
-                Point2i pixel = pixels[maxIndex];
-                //std::cout << norm(pixel - Point2i{ x, y }) << std::endl;
-                disparity.at<unsigned char>(Point(x, y)) = (int) norm(pixel - Point2i{ x, y });
-
-                
+            /// Get weights for disparity based on blurred x,y slope
+            Mat validWeight;
+            if ((cameras[p[0]].pos3D - cameras[p[1]].pos3D).y != 0) 
+            {
+                multiply(nDV / 255, subDisparities.back() != 0 & subDisparities.back() < 3000, validWeight, 1, nDV.type());
             }
+            else
+            {
+                multiply(nDH / 255, subDisparities.back() != 0 & subDisparities.back() < 3000, validWeight, 1, nDH.type());
+            }
+            weights.push_back(validWeight);
+            
+            /// Multiply the disparities with their weights
+            weightedSubDisparities.push_back(Mat{});
+            multiply(subDisparities.back(), validWeight, weightedSubDisparities.back(), 1, CV_32F);
+            //showImage("subDisparities.back()", subDisparities.back());
+            
+            /// Add weighted disparity to interim disparity sum
+            add(interimDisparity, weightedSubDisparities.back(), interimDisparity, mask, interimDisparity.type());
+            
+            //showImage("weightedSubDisparities.back()", weightedSubDisparities.back()/1000);
 
+            /// Add weight to weight sum
+            add(weight, validWeight, weight, mask, weight.type());
+            
         }
+        divide(interimDisparity, weight, interimDisparity, 1, CV_32F);
+        weight = Scalar(0);
+        Mat stdDev{ images[0].size(), CV_32F, Scalar(0) };
+        std::vector<Mat> deviations;
+        for (auto d : subDisparities)
+        {
+            Mat deviation;
+            subtract(interimDisparity, d, deviation, mask, interimDisparity.type());
+            deviations.push_back(abs(deviation));
+            stdDev += deviations.back();
+        }
+        stdDev /= deviations.size();
+
+        Mat disparity{ images[0].size(), CV_16U, Scalar(0) };
+        for (int i = 0; i < pairs.size(); i++)
+        {
+            Mat valid = deviations[i] <= stdDev+50;    ///VARIABLE
+            Mat validWeights;
+            multiply(valid / 255, weights[i], validWeights, 1, weights[i].type());
+            add(weight, weights[i], weight, valid, CV_32F);
+            Mat validDisps;
+            weightedSubDisparities[i].copyTo(validDisps, valid);
+            add(disparity, validDisps, disparity, noArray(), CV_16U);
+        }
+
+        divide(disparity, weight, disparity, 1, CV_16U);
+        //showImage("Disparity", disparity*10);
+        Mat shiftedDisparity = shiftDisparityPerspective(cameras[c], cameras[12], disparity);
+        fillHoles(shiftedDisparity, 11);
+        //showImage("shiftedDisparity", shiftedDisparity * 16);
+
+        resize(shiftedDisparity, disparityResize, disparityRef.size());
+        Mat error = abs(disparityResize - disparityRef);
+        imshow("error", error*1000);
+        //showImage("Error", error);
+
+        Mat heatmap = getOrthogonalityFromCamera(centerDisparity, centerMask, cameras[12], cameras[13], cameras[c]);
+        showImage("heatmap", heatmap);
+
+        multiply(heatmap/255, shiftedDisparity != 0, heatmap, 1, heatmap.type());
+        //std::cout << heatmap.type() << ", " << mask.type() << ", " << error.type() << std::endl;
+        //for (int v = 0; v < heatmap.rows; v++)
+        //{
+        //    for (int u = 0; u < heatmap.cols; u++)
+        //    {
+        //        if (mask.at<uchar>(v, u) != 0) 
+        //        {
+        //            heat.push_back(heatmap.at<float>(v, u));
+        //            err.push_back(error.at<ushort>(int(v/2), int(u/2)));
+        //        }
+        //    }
+        //}
+        //std::cout << heat.size() << std::endl;
+
+        //showImage("Bin", heatmap);
+        combinedHeatmap += heatmap;
+        Mat weightedDisparity;
+        multiply(heatmap, shiftedDisparity, weightedDisparity, 1, CV_16U);
+        combinedDisparity += weightedDisparity;
+
     }
-    //imshow("Disp", disparity);
+    //plt::figure_size(1200, 780);
+    //plt::plot(heat, err, "r.");
+    //plt::show();
+    divide(combinedDisparity, combinedHeatmap, combinedDisparity, 1, CV_16U);
+    showImage("Combined", combinedDisparity*22);
 
-    Mat pixSizeDisp;
-    multiply(disparity, pixelSize, pixSizeDisp, 1, 6);
-    depth =  camDistance * f / (pixSizeDisp);
-    std::cout << "Test" << std::endl;
-
-    namedWindow("Depth", 1);
-    //setMouseCallback("My Window", CallBackFunc, NULL);
-    showImage("Depth", depth);
-    //waitKey(0);
-    Mat ref = getIdealRef();
-    Mat depth2;
-    resize(depth, depth2, ref.size());
-    Mat error = (depth2 - ref) * 50;
+    resize(combinedDisparity, disparityResize, disparityRef.size());
+    Mat error = abs(disparityResize - disparityRef) * 800;
     showImage("Error", error);
-    std::vector<Mat> inpImages = { images[pairs[0][1]] };
-    std::vector < std::array<Camera, 2> > inpCameras = { {cameras[pairs[0][0]], cameras[pairs[0][1]]} };
-    Mat improvedDepth = improveWithDisparity(disparity, images[pairs[0][0]], inpImages, inpCameras, 21);
-    namedWindow("Depth2", 1);
-    showImage("Depth2", improvedDepth);
-    waitKey(0);
-    resize(improvedDepth, depth2, ref.size());
-    error = (depth2 - ref) * 50;
-    showImage("Error2", error);
+    resize(centerDisparity, disparityResize, disparityRef.size());
+    Mat errorC = abs(disparityResize - disparityRef) * 800;
+    showImage("ErrorC", errorC);
 
-    waitKey(0);
+    showImage("Diff", error - errorC);
+    showImage("Diff2", errorC - error);
+
+    /// Disparity
+    std::vector<cv::Point2i> maskPoints0 = Points3DtoPoints2D(maskPoints3D, cameras[0]);
+    Mat mask0 = drawMask(images.back(), maskPoints0);
+    showImage("Mask0", mask0);
+    Mat disparity = getDisparityFromPairSGM(images[0], images[1], mask0, cameras[0], cameras[1]);
+    showImage("disparity", disparity * 22);
+    Mat shiftedDisparity = shiftDisparityPerspective(cameras[0], cameras[12], disparity);
+
+    showImage("shiftedDisparity", shiftedDisparity * 22);
+    fillHoles(shiftedDisparity, 11);
+    showImage("shift", shiftedDisparity*22);
+    Mat disparity2;
+    copyTo(shiftedDisparity, disparity2, centerMask);
+    disparity = disparity2;
+
+
+    //Mat directionality2 = getOrthogonalityFromCamera(disparity, mask, cameras[12], cameras[13], cameras[0]);
+    //showImage("Diff", directionality1 - directionality2);
+
+    showImage("DispAft", disparity*16);
+
+    /// Depth
+    Mat depth = disparity2Depth(disparity, cameras[12], cameras[13]);
+
+    //Mat reference = getIdealRef();
+    //Mat resDepth;
+    //resize(depth, resDepth, reference.size());
+    //showImage("Diff", abs(reference - resDepth)*200);
+
+    //Mat disparityRef = depth2Disparity(reference, cameras[12], cameras[11]);
+    //resize(depth, depth, reference.size());
+    //Mat disparityResize;
+
+    //resize(disparity, disparityResize, disparityRef.size());
+
+    //Mat error = abs(disparityResize - disparityRef) * 800;
+    //showImage("Error", error);
+
 }
 

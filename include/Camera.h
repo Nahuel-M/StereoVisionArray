@@ -1,3 +1,4 @@
+#pragma once
 #include <vector>
 #include <array>
 #include <opencv2/core.hpp>
@@ -14,8 +15,8 @@ public:
 	cv::Point3d inv_project(cv::Point2i pixel);
 
 	double f;
-	double pixel_size;
-
+	double pixelSize;
 
 private:
+
 };

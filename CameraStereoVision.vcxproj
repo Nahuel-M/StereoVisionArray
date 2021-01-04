@@ -159,15 +159,25 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\bresenham.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="src\Camera.cpp" />
     <ClCompile Include="src\CameraStereoVision.cpp" />
     <ClCompile Include="src\dlibFaceSelect.cpp" />
     <ClCompile Include="src\functions.cpp" />
+    <ClCompile Include="src\imageHandling.cpp" />
+    <ClCompile Include="src\plotting.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="include\bresenham.h">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClInclude>
     <ClInclude Include="include\Camera.h" />
     <ClInclude Include="include\dlibFaceSelect.h" />
     <ClInclude Include="include\functions.h" />
+    <ClInclude Include="include\imageHandling.h" />
+    <ClInclude Include="include\plotting.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="CameraStereoVision.rc" />
