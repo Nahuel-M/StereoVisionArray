@@ -8,6 +8,7 @@ class Camera
 {
 public:
 	Camera(double focal_length, cv::Point3d position, double pixel_size);
+	Camera();
 	~Camera();
 
 	cv::Point3d pos3D;

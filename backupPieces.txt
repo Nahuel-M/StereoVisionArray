@@ -1,0 +1,17 @@
+ Analytical gradient
+	//float gAdd = preMult * (p.x / p.z / p.z) - tPointOffset.x / p.z;
+	//avgError += cv::abs(gAdd);
+	//gradient(0) += gAdd;
+	//gradient(3) += gAdd * (i - (board_height - 1) / 2) / 3;
+	//gradient(6) += gAdd * (j - (board_width - 1) / 2) / 3;
+
+	//gAdd = preMult * (p.y / p.z / p.z) - tPointOffset.y / p.z;
+	//avgError += cv::abs(gAdd);
+	//gradient(1) += gAdd;
+	//gradient(4) += gAdd * (i - (board_height - 1) / 2) / 3;
+	//gradient(7) += gAdd * (j - (board_width - 1) / 2) / 3;
+
+	//gAdd = -(preMult * p.x / p.z / p.z / p.z - tPointOffset.x / p.z / p.z) - (preMult * p.y / p.z / p.z / p.z - tPointOffset.y / p.z / p.z);
+	//gradient(2) += gAdd;
+	//gradient(5) += gAdd * (i - (board_height - 1) / 2) / 6;
+	//gradient(8) += gAdd * (j - (board_width - 1) / 2) / 6;

@@ -26,18 +26,19 @@ cv::Mat drawMask(cv::Mat& sampleImage, std::vector<cv::Point2i>& PointIndices)
 
 std::vector<cv::Point2i> getFaceMaskPoints(cv::Mat& sampleImage)
 {
-    std::string folder = "Renders2";
-    std::vector<std::string> files = getImagesPathsFromFolder(folder);
-    std::vector<cv::Mat> images;
-    cv::Mat image = cv::imread(files[12], cv::IMREAD_GRAYSCALE);
-    resize(image, image, sampleImage.size());
+    //std::string folder = "Renders2";
+    //std::vector<std::string> files = getImagesPathsFromFolder(folder);
+    //std::vector<cv::Mat> images;
+    //cv::Mat image = cv::imread(files[12], cv::IMREAD_GRAYSCALE);
+    //resize(image, image, sampleImage.size());
 
     dlib::frontal_face_detector detector = dlib::get_frontal_face_detector();
     dlib::shape_predictor sp;
     dlib::deserialize("shape_predictor_68_face_landmarks.dat") >> sp;
-    IplImage iplImage = cvIplImage(image);
+    IplImage iplImage = cvIplImage(sampleImage);
     dlib::cv_image<uchar> img(iplImage);
     std::vector<dlib::rectangle> faces = detector(img);
+    std::cout << faces.size() << std::endl;
     dlib::full_object_detection shape = sp(img, faces[0]);
 
     std::vector<cv::Point2i> PointIndices;

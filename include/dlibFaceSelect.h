@@ -2,6 +2,7 @@
 #include <opencv2/core.hpp>
 #include "Camera.h"
 
+
 cv::Mat getFaceMask(cv::Mat& sampleImage);
 
 cv::Mat drawMask(cv::Mat& sampleImage, std::vector<cv::Point2i>& PointIndices);

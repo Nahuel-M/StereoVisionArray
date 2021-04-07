@@ -8,6 +8,10 @@ Camera::Camera(double focal_length, Point3d position, double pixel_size):
 {
 }
 
+Camera::Camera()
+{
+}
+
 Camera::~Camera()
 {
 }

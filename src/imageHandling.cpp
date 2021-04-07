@@ -3,7 +3,6 @@
 
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc.hpp>
-
 #include "imageHandling.h"
 
 cv::Mat getIdealRef() {
@@ -57,6 +56,14 @@ static void CallBackFuncs(int event, int x, int y, int flags, void* param)
 		{
 			std::cout << "at position (" << x << ", " << y << ")" << ": " << ptrImage.at<float>(cv::Point(x, y)) << std::endl;
 		}
+		else if (ptrImage.type() == 18)
+		{
+			std::cout << "Vec3US at position (" << x << ", " << y << ")" << ": " << ptrImage.at<cv::Vec<ushort,3>>(cv::Point(x, y)) << std::endl;
+		}
+		else if (ptrImage.type() == 19)
+		{
+			std::cout << "Vec3SS at position (" << x << ", " << y << ")" << ": " << ptrImage.at<cv::Vec<short, 3>>(cv::Point(x, y)) << std::endl;
+		}
 		else if (ptrImage.type() == 21)
 		{
 			std::cout << "Vec3f at position (" << x << ", " << y << ")" << ": " << ptrImage.at<cv::Vec3f>(cv::Point(x, y)) << std::endl;
@@ -70,12 +77,41 @@ static void CallBackFuncs(int event, int x, int y, int flags, void* param)
 
 }
 
-void showImage(std::string name, cv::Mat image) {
+void showImage(std::string name, cv::Mat image, double multiplier, bool hold) {
+	cv::resize(image, image, cv::Size(), 0.4, 0.4);
+	cv::namedWindow(name, cv::WindowFlags::WINDOW_AUTOSIZE);
+	cv::imshow(name, image * multiplier);
+	if (hold)
+	{
+		cv::setMouseCallback(name, CallBackFuncs, &image);
+		cv::waitKey(0);
+	}
+}
+
+void showDifference(std::string name, cv::Mat image1, cv::Mat image2, double multiplier)
+{
+	cv::Mat diff;
+	cv::subtract(image1, image2, diff, cv::noArray(), CV_16S);
+
+	cv::Mat pDiff = diff.clone();
+	cv::Mat nDiff = -diff.clone();
+	pDiff.setTo(0, pDiff < 0);
+	nDiff.setTo(0, nDiff < 0);
+
+	std::vector<cv::Mat> channels;
+	cv::Mat z =cv::Mat::zeros(cv::Size(nDiff.cols, nDiff.rows), nDiff.type());
+	channels.push_back(nDiff);
+	channels.push_back(z);
+	channels.push_back(pDiff);
+
+	cv::Mat merged;
+	cv::merge(channels, merged);
+
 	cv::namedWindow(name, cv::WindowFlags::WINDOW_NORMAL);
-	cv::Mat imHolder;
 	cv::resizeWindow(name, 710, 540);
-	cv::resize(image, imHolder, cv::Size{ 710,540 }, 0, 0, 0);
-	cv::imshow(name, imHolder);
-	cv::setMouseCallback(name, CallBackFuncs, &imHolder);
+	cv::resize(merged, merged, cv::Size{ 710,540 }, 0, 0, 0);
+	cv::resize(diff, diff, cv::Size{ 710,540 });
+	cv::imshow(name, merged * multiplier);
+	cv::setMouseCallback(name, CallBackFuncs, &diff);
 	cv::waitKey(0);
 }

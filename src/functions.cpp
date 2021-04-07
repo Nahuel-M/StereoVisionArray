@@ -1,4 +1,5 @@
 #include <fstream>
+
 #include <iostream>
 #include <filesystem>
 
@@ -164,61 +165,95 @@ cv::Mat disparity2Depth(cv::Mat &disparity, Camera camera1, Camera camera2)
 //	return globDisparity;
 //}
 
-Mat getDisparityFromPairSGM(cv::Mat& image1, cv::Mat& image2, cv::Mat& mask, Camera cam1, Camera cam2)
+//cv::Mat getDisparityFromPairSGM(cv::Mat& image1, cv::Mat& image2, cv::Mat& mask, Camera cam1, Camera cam2, int P1, int P2)
+//{
+//	Point3d distance = cam1.pos3D - cam2.pos3D;
+//	Ptr<StereoSGBM> sgbm;
+//	Mat* im1pointer = &image1;
+//	Mat* im2pointer = &image2;
+//	Mat im1rot, im2rot;
+//
+//	int disp12MaxDiff = 12;
+//	int preFilterCap = 4;
+//	int uniquenessRatio = 1;
+//	int speckleWindowSize = 100;
+//	int speckleRange = 5;
+//
+//
+//	if (distance.x > 0) {
+//		sgbm = StereoSGBM::create(-240, 144, 1, P1, P2, disp12MaxDiff, preFilterCap, uniquenessRatio, speckleWindowSize, speckleRange, StereoSGBM::MODE_HH);
+//	}
+//	else if (distance.x < 0) {
+//		sgbm = StereoSGBM::create(96, 144, 1, P1, P2, disp12MaxDiff, preFilterCap, uniquenessRatio, speckleWindowSize, speckleRange, StereoSGBM::MODE_HH);
+//	}
+//	else if (distance.y > 0) {
+//		sgbm = StereoSGBM::create(-240, 144, 1, P1, P2, disp12MaxDiff, preFilterCap, uniquenessRatio, speckleWindowSize, speckleRange, StereoSGBM::MODE_HH);
+//		rotate(image1, im1rot, ROTATE_90_COUNTERCLOCKWISE);
+//		rotate(image2, im2rot, ROTATE_90_COUNTERCLOCKWISE);
+//		im1pointer = &im1rot;
+//		im2pointer = &im2rot;
+//	}
+//	else if (distance.y < 0) {
+//		sgbm = StereoSGBM::create(96, 144, 1, P1, P2, disp12MaxDiff, preFilterCap, uniquenessRatio, speckleWindowSize, speckleRange, StereoSGBM::MODE_HH);
+//		rotate(image1, im1rot, ROTATE_90_COUNTERCLOCKWISE);
+//		rotate(image2, im2rot, ROTATE_90_COUNTERCLOCKWISE);
+//		im1pointer = &im1rot;
+//		im2pointer = &im2rot;
+//	}
+//	cv::Mat disparity;
+//	sgbm->setMode(StereoSGBM::MODE_SGBM);
+//	sgbm->compute(*im1pointer, *im2pointer, disparity);
+//	if (distance.y != 0) {
+//		rotate(disparity, disparity, ROTATE_90_CLOCKWISE);
+//	}
+//	disparity = abs(disparity);
+//	std::cout << disparity.type() << std::endl;
+//	disparity.convertTo(disparity, 2);
+//	disparity.setTo(0, mask == 0);
+//
+//	return disparity;
+//}
+
+cv::Mat getDisparityFromPairSGM(std::array<int,2> pair, int P1, int P2)
 {
-	Point3d distance = cam1.pos3D - cam2.pos3D;
+
+	Point3d distance = cameras[pair[0]].pos3D - cameras[pair[1]].pos3D;
 	Ptr<StereoSGBM> sgbm;
-	Mat* im1pointer = &image1;
-	Mat* im2pointer = &image2;
+	Mat* im1pointer = &images[pair[0]];
+	Mat* im2pointer = &images[pair[1]];
 	Mat im1rot, im2rot;
-	int P1 = 2;
-	int P2 = 16;
+
+	int disp12MaxDiff = 12;
+	int preFilterCap = 4;//PreFilterCap			4
+	int uniqRatio = 2;	// Uniqueness ratio		
+	int sWinSize = 200;	// Speckle window size	100
+	int sRange = 10;	// Speckle range
+	int numDisp = 48;	// Number of disparities
+	int minDisp = 250;	// Minimum disparity
+	
+
 	if (distance.x > 0) {
-		sgbm = StereoSGBM::create(
-			-240, 144, 1,
-			P1, P2, 12,
-			4, 1,
-			100, 5,
-			StereoSGBM::MODE_HH
-		);
+		sgbm = StereoSGBM::create(-minDisp - numDisp, numDisp, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
 	}
 	else if (distance.x < 0) {
-		sgbm = StereoSGBM::create(
-			96, 144, 1,
-			P1, P2, 12,
-			4, 1,
-			100, 5,
-			StereoSGBM::MODE_HH
-		);
-	}
-	else if (distance.y > 0) {
-		sgbm = StereoSGBM::create(
-			-240, 144, 1,
-			P1, P2, 12,
-			4, 1,
-			100, 5,
-			StereoSGBM::MODE_HH
-		);
-		rotate(image1, im1rot, ROTATE_90_COUNTERCLOCKWISE);
-		rotate(image2, im2rot, ROTATE_90_COUNTERCLOCKWISE);
-		im1pointer = &im1rot;
-		im2pointer = &im2rot;
+		sgbm = StereoSGBM::create(minDisp, numDisp, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
 	}
 	else if (distance.y < 0) {
-		sgbm = StereoSGBM::create(
-			96, 144, 1,
-			P1, P2, 12,
-			4, 1,
-			100, 5,
-			StereoSGBM::MODE_HH
-		);
-		rotate(image1, im1rot, ROTATE_90_COUNTERCLOCKWISE);
-		rotate(image2, im2rot, ROTATE_90_COUNTERCLOCKWISE);
+		sgbm = StereoSGBM::create(-minDisp - numDisp, numDisp, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
+		rotate(images[pair[0]], im1rot, ROTATE_90_COUNTERCLOCKWISE);
+		rotate(images[pair[1]], im2rot, ROTATE_90_COUNTERCLOCKWISE);
 		im1pointer = &im1rot;
 		im2pointer = &im2rot;
 	}
-	Mat disparity;
-	sgbm->setMode(StereoSGBM::MODE_SGBM);
+	else if (distance.y > 0) {
+		sgbm = StereoSGBM::create(minDisp, numDisp, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
+		rotate(images[pair[0]], im1rot, ROTATE_90_COUNTERCLOCKWISE);
+		rotate(images[pair[1]], im2rot, ROTATE_90_COUNTERCLOCKWISE);
+		im1pointer = &im1rot;
+		im2pointer = &im2rot;
+	}
+	cv::Mat disparity;
+	//sgbm->setMode(StereoSGBM::MODE_SGBM);
 	sgbm->compute(*im1pointer, *im2pointer, disparity);
 	if (distance.y != 0) {
 		rotate(disparity, disparity, ROTATE_90_CLOCKWISE);
@@ -230,36 +265,31 @@ Mat getDisparityFromPairSGM(cv::Mat& image1, cv::Mat& image2, cv::Mat& mask, Cam
 	return disparity;
 }
 
-std::vector<Camera> getCameras(cv::Size resolution)
+void getCameras(std::vector<Camera>& cameras, cv::Size resolution, double f, double sensorSize, double pixelSize)
 {
-	double f = 0.05;
-	double sensor_size = 0.036;
 	std::cout << "Image Resolution: " << resolution << std::endl;
-	Point2i halfRes = resolution / 2;
-	Point2i centerPixel = resolution / 2;
-	double pixelSize = sensor_size / resolution.width;
+	if (pixelSize == 0) {
+		pixelSize = sensorSize / resolution.width;
+	}
 	std::cout << "Pixel Size: " << pixelSize << std::endl;
 
-	std::vector<Camera> cameras;
-	for (int y = 0; y < 5; y++) 
+
+	for (int y = 0; y < 5; y++)
 	{
-		for (int x = 0; x < 5; x++) 
+		for (int x = 0; x < 5; x++)
 		{
-			cameras.push_back(Camera(f, Point3d{ -0.1 + x * 0.05, -0.1 + y * 0.05, -0.75 }, pixelSize));
+			cameras.push_back(Camera(f, Point3d{ 0.1 - x * 0.05, 0.1 - y * 0.05, -0.75 }, pixelSize));	//VARIABLE
 		}
 	}
-	return cameras;
 }
 
-std::vector<cv::Mat> getImages(std::string folderName, double scale = 1)
+void getImages(std::vector<cv::Mat>& images, std::string folderName, double scale)
 {
 	std::vector<std::string> files = getImagesPathsFromFolder(folderName);
-	std::vector<Mat> images;
 	for (int i = 0; i < files.size(); i++) {
 		images.push_back(imread(files[i], IMREAD_GRAYSCALE));
 		resize(images.back(), images.back(), Size(), scale, scale);
 	}
-	return images;
 }
 
 cv::Mat improveWithDisparity(cv::Mat& disparity, cv::Mat centerImage, std::vector<cv::Mat> &images, std::vector<std::array<Camera, 2>> &cameras, int windowSize)
@@ -294,46 +324,30 @@ cv::Mat improveWithDisparity(cv::Mat& disparity, cv::Mat centerImage, std::vecto
 	return improvedDisparity;
 }
 
-cv::Mat improveWithDisparitySGM(cv::Mat& disparity, cv::Mat centerImage, std::vector<cv::Mat>& images, std::vector<std::array<Camera, 2>>& cameras, int windowSize)
+cv::Mat iterDisparityImproveSGM(cv::Mat& disparity, Mat& mask, cv::Mat& centerIm, cv::Mat& offCenterIm, Camera centerCam, Camera offCenterCam)
 {
-	Mat mask = getFaceMask(centerImage);
-	Mat center2;
-	centerImage.copyTo(center2, mask);
 	Mat improvedDisparity{ disparity.size(), disparity.type() };
-	int kernelSize = (windowSize - 1) / 2;
-	for (int c = 0; c < cameras.size(); c++) {
-		std::array<Camera, 2> cam = cameras[c];
-		Mat shifted = shiftPerspectiveWithDisparity(cam[0], cam[1], disparity, images[c]);
-		//showImage("Before Shift", images[c]);
-		//showImage("Shifted", shifted);
-		//showImage("Center", center2);
-		Ptr<cv::StereoSGBM> sgbm = cv::StereoSGBM::create(
-			-16, 32, 1,
-			1, 16, 12,
-			4, 1,
-			10, 2,
-			cv::StereoSGBM::MODE_HH
-		);
+	Mat center;
+	centerIm.copyTo(center, mask);
 
-		Mat addDisp;
-		sgbm->setMode(cv::StereoSGBM::MODE_SGBM);
-		sgbm->compute(center2, shifted, addDisp);
-		//showImage("Center", center2);
-		//showImage("Shifted", shifted);
-		//addDisp.convertTo(addDisp, CV_8S);
-		std::cout << "Before " << addDisp.at<signed short>(718, 613) << std::endl;
-		showImage("AddDisp", (addDisp)*125);
-		//addDisp = addDisp * 256;
-		Mat display;
-		normalize(addDisp, display, 1, 0, NORM_MINMAX);
-		//showImage("Add", display);
-		//showImage("Or", disparity);
-		waitKey(0);
-		add(disparity, addDisp, improvedDisparity, mask, 2);
-		std::cout << disparity.type() << addDisp.type() << improvedDisparity.type() << std::endl;
-		std::cout << "After " << addDisp.at<signed short>(718, 613) << std::endl;
+	Mat shifted = shiftPerspectiveWithDisparity(centerCam, offCenterCam, disparity, offCenterIm);
+	showImage("shifted", shifted);
+	Ptr<cv::StereoSGBM> sgbm = cv::StereoSGBM::create(
+		-16, 32, 1,
+		2, 16, 12,
+		4, 1,
+		10, 2,
+		cv::StereoSGBM::MODE_HH
+	);
 
-	}
+	Mat addDisp;
+	sgbm->setMode(cv::StereoSGBM::MODE_SGBM);
+	sgbm->compute(center, shifted, addDisp);
+
+	add(disparity, addDisp, improvedDisparity, mask, disparity.type());
+	std::cout << disparity.type() << addDisp.type() << improvedDisparity.type() << std::endl;
+	std::cout << "After " << addDisp.at<signed short>(718, 613) << std::endl;
+
 	return improvedDisparity;
 }
 
@@ -550,6 +564,40 @@ int getAbsDiff(cv::Mat& mat1, cv::Mat& mat2)
 	return sum(abs(mat1-mat2))[0];
 }
 
+// natural compare by Christian Ammer
+bool compareNat(const std::string& a, const std::string& b)
+{
+	if (a.empty())
+		return true;
+	if (b.empty())
+		return false;
+	if (std::isdigit(a[0]) && !std::isdigit(b[0]))
+		return true;
+	if (!std::isdigit(a[0]) && std::isdigit(b[0]))
+		return false;
+	if (!std::isdigit(a[0]) && !std::isdigit(b[0]))
+	{
+		if (std::toupper(a[0]) == std::toupper(b[0]))
+			return compareNat(a.substr(1), b.substr(1));
+		return (std::toupper(a[0]) < std::toupper(b[0]));
+	}
+
+	// Both strings begin with digit --> parse both numbers
+	std::istringstream issa(a);
+	std::istringstream issb(b);
+	int ia, ib;
+	issa >> ia;
+	issb >> ib;
+	if (ia != ib)
+		return ia < ib;
+
+	// Numbers are the same --> remove numbers and recurse
+	std::string anew, bnew;
+	std::getline(issa, anew);
+	std::getline(issb, bnew);
+	return (compareNat(anew, bnew));
+}
+
 std::vector<std::string> getImagesPathsFromFolder(std::string folderPath)
 {
 	namespace fs = std::filesystem;
@@ -559,6 +607,7 @@ std::vector<std::string> getImagesPathsFromFolder(std::string folderPath)
 		filePaths.push_back(p.path().u8string());
 		//std::cout << p.path().u8string() << std::endl;
 	}
+	std::sort(filePaths.begin(), filePaths.end(), compareNat);
 	return filePaths;
 }
 
@@ -733,4 +782,46 @@ cv::Mat getBlurredSlope(cv::Mat image, int vertical, int blurKernelSize)
 	//blur(delta, delta, Size(50, 50));
 	GaussianBlur(delta, delta, Size(blurKernelSize, blurKernelSize), 0);
 	return delta;
+}
+
+void getCameraIntrinsicParameters(std::string filePath, cv::Mat& K, cv::Mat& D)
+{
+	/// Read intrinsic camera calibration info from file
+	FileStorage fs(filePath, FileStorage::READ);
+	fs["K"] >> K;
+	fs["D"] >> D;
+	fs.release();
+}
+
+void undistortImages(std::vector<cv::Mat>& images, cv::Mat& K, cv::Mat& D, bool verbose)
+{
+	Mat map1, map2;
+	cv::initUndistortRectifyMap(K, D, Mat(), K, images[0].size(), images[0].type(), map1, map2);
+	for (int i = 0; i < images.size(); i++) {
+		if(verbose){ showImage("Before", images[i]); }
+		remap(images[i], images[i], map1, map2, INTER_LINEAR);
+		if (verbose) { showImage("After", images[i]); }
+	}
+
+}
+
+void exportOBJfromDisparity(cv::Mat disparityImage, std::string fileName, Camera cam1, Camera cam2, float scale) 
+{
+	float preMult = norm(cam1.pos3D-cam2.pos3D) * cam1.f * 16 / cam1.pixelSize;
+	std::cout << "Premult: " << norm(cam1.pos3D - cam2.pos3D) << " * " << cam1.f << " = " << preMult << std::endl;
+	if (scale != 1.f) {
+		resize(disparityImage, disparityImage, Size{}, scale, scale);
+	}
+	Mat_<float> Z;
+	divide(preMult, disparityImage, Z, CV_32F);
+	std::ofstream outputFile(fileName);
+	for (int u = 0; u < Z.rows; u++)
+	{
+		for (int v = 0; v < Z.cols; v++)
+		{
+			//std::cout << Z(u, v) << ", " << disparityImage.at<short>(u, v) << std::endl;
+			outputFile << "v " << Z(u, v) * cam1.pixelSize * (v-Z.cols/2) / cam1.f << " " << Z(u, v) * cam1.pixelSize * (u-Z.rows/2) / cam1.f << " " << Z(u, v) << std::endl;
+		}
+	}
+	outputFile.close();
 }

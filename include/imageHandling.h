@@ -2,7 +2,9 @@
 #include <string>
 #include <opencv2/core.hpp>
 
-void showImage(std::string name, cv::Mat image);
+void showImage(std::string name, cv::Mat image, double multiplier = 1, bool hold = true);
+
+void showDifference(std::string name, cv::Mat image1, cv::Mat image2, double multiplier = 1);
 
 cv::Mat getIdealRef();
 
