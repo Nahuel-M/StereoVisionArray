@@ -315,8 +315,8 @@ cv::Mat improveWithDisparity(cv::Mat& disparity, cv::Mat centerImage, std::vecto
 					Mat compWindow = shifted(Rect{ newP - Point2i{kernelSize, kernelSize}, newP + Point2i{kernelSize, kernelSize} });
 					error.push_back(getAbsDiff(compWindow, window));
 				}
-				int maxIndex = std::distance(error.begin(), std::min_element(error.begin(), error.end()));
-				improvedDisparity.at<unsigned char>(y, x) = disparity.at<unsigned char>(y, x) + (maxIndex - 5)*(distance.x+distance.y);
+				int maxIndex = (int)std::distance(error.begin(), std::min_element(error.begin(), error.end()));
+				improvedDisparity.at<unsigned char>(y, x) = disparity.at<unsigned char>(y, x) + ((double)maxIndex - 5.)*(distance.x+distance.y);
 			}
 		}
 
@@ -364,8 +364,8 @@ cv::Mat shiftPerspectiveWithDisparity(Camera& inputCam, Camera& outputCam, cv::M
 			if (disp == 0) {
 				continue;
 			}
-			int shiftedX = disp * preMultX + x;
-			int shiftedY = disp * preMultY + y;
+			int shiftedX = (int) (disp * preMultX) + x;
+			int shiftedY = (int)(disp * preMultY) + y;
 			if (shiftedY >= disparity.rows || shiftedY < 0 || shiftedX >= disparity.cols || shiftedX < 0)
 				continue;
 			shiftedImage.at<unsigned char>(y, x) = image.at<unsigned char>(shiftedY, shiftedX);
@@ -379,7 +379,6 @@ cv::Mat shiftPerspective(Camera inputCam, Camera outputCam, cv::Mat &depth)
 	Mat shiftedDepthMap = Mat{ depth.size() , depth.type() };
 	double preMultX = (inputCam.pos3D.x - outputCam.pos3D.x) * inputCam.f / inputCam.pixelSize;
 	double preMultY = (inputCam.pos3D.y - outputCam.pos3D.y) * inputCam.f / inputCam.pixelSize;
-	int direction[] = { outputCam.pos3D.x - inputCam.pos3D.x, outputCam.pos3D.y - inputCam.pos3D.y };
 	//std::cout << "direction0 " << direction[0] << std::endl;
 	for (int x = 0; x < depth.cols; x++) {
 		for (int y = 0; y < depth.rows; y++) {
@@ -393,10 +392,6 @@ cv::Mat shiftPerspective(Camera inputCam, Camera outputCam, cv::Mat &depth)
 			shiftedDepthMap.at<double>(Point(shiftedX, shiftedY)) = d;
 		}
 	}
-
-	//cv::imshow("Map", shiftedDepthMap);
-	//cv::imshow("Original", depthMap);
-	//cv::waitKey(0);
 	return shiftedDepthMap;
 }
 
@@ -561,7 +556,7 @@ std::vector<std::array<int, 2>> getCameraPairs(const std::vector<Camera>& camera
 
 int getAbsDiff(cv::Mat& mat1, cv::Mat& mat2)
 {
-	return sum(abs(mat1-mat2))[0];
+	return (int)sum(abs(mat1-mat2))[0];
 }
 
 // natural compare by Christian Ammer
@@ -638,7 +633,7 @@ cv::Mat depth2Normals(cv::Mat& depth, Mat& mask, Camera cam)
 			float dzdy = ((float)averagedDepth.at<double>(x + 1, y) - (float)averagedDepth.at<double>(x - 1, y));
 			float dzdx = ((float)averagedDepth.at<double>(x, y + 1) - (float)averagedDepth.at<double>(x, y - 1));
 
-			Vec3f d(-dzdx, -dzdy, orthogonalDiff * averagedDepth.at<double>(x, y));
+			Vec3f d(-dzdx, -dzdy, float(orthogonalDiff * averagedDepth.at<double>(x, y)));
 			Vec3f n = normalize(d);
 
 			normals.at<Vec3f>(x, y) = n;
@@ -654,8 +649,8 @@ cv::Mat disparity2Normals(cv::Mat& disparity, Mat& mask, Camera cam)
 {
 	Mat avgDisparity;
 	avgDisparity = blurWithMask(disparity, mask, 49);
-	float camDist = 0.05;	/// VARIABLE
-	double preMult = 16 * camDist * cam.f / cam.pixelSize;
+	float camDist = 0.05f;	/// VARIABLE
+	double preMult = 16. * (double)camDist * cam.f / cam.pixelSize;
 
 	cv::Mat normals(disparity.size(), CV_32FC3);
 
@@ -664,8 +659,8 @@ cv::Mat disparity2Normals(cv::Mat& disparity, Mat& mask, Camera cam)
 		for (int y = 3; y < disparity.cols - 3; ++y)
 		{
 			if (mask.at<uchar>(x, y) == 0) continue;
-			float dzdx = (preMult / avgDisparity.at<ushort>(x + 1, y) - preMult / avgDisparity.at<ushort>(x - 1, y));
-			float dzdy = (preMult / avgDisparity.at<ushort>(x, y + 1) - preMult / avgDisparity.at<ushort>(x, y - 1));
+			float dzdx = float(preMult / avgDisparity.at<ushort>(x + 1, y) - preMult / avgDisparity.at<ushort>(x - 1, y));
+			float dzdy = float(preMult / avgDisparity.at<ushort>(x, y + 1) - preMult / avgDisparity.at<ushort>(x, y - 1));
 
 			Vec3f d(-dzdx, -dzdy, 2 * camDist * avgDisparity.at<ushort>(x, y));
 			Vec3f n = normalize(d);
@@ -800,6 +795,7 @@ void undistortImages(std::vector<cv::Mat>& images, cv::Mat& K, cv::Mat& D, bool 
 	for (int i = 0; i < images.size(); i++) {
 		if(verbose){ showImage("Before", images[i]); }
 		remap(images[i], images[i], map1, map2, INTER_LINEAR);
+		blur(images[i], images[i], Size{ 6, 6 });
 		if (verbose) { showImage("After", images[i]); }
 	}
 
@@ -807,8 +803,8 @@ void undistortImages(std::vector<cv::Mat>& images, cv::Mat& K, cv::Mat& D, bool 
 
 void exportOBJfromDisparity(cv::Mat disparityImage, std::string fileName, Camera cam1, Camera cam2, float scale) 
 {
-	float preMult = norm(cam1.pos3D-cam2.pos3D) * cam1.f * 16 / cam1.pixelSize;
-	std::cout << "Premult: " << norm(cam1.pos3D - cam2.pos3D) << " * " << cam1.f << " = " << preMult << std::endl;
+	double preMult = norm(cam1.pos3D-cam2.pos3D) * cam1.f * 16 / cam1.pixelSize;
+	//std::cout << "Premult: " << norm(cam1.pos3D - cam2.pos3D) << " * " << cam1.f << " = " << preMult << std::endl;
 	if (scale != 1.f) {
 		resize(disparityImage, disparityImage, Size{}, scale, scale);
 	}

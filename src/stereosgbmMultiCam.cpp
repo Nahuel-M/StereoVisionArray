@@ -6,6 +6,9 @@
 #include "opencv2/core/hal/intrin.hpp"
 #include "opencv2/core/utils/buffer_area.private.hpp"
 #include "stereosgbmMultiCam.h"
+#include "imageHandling.h"
+
+
 using namespace cv;
 
 typedef uchar PixType;
@@ -62,7 +65,8 @@ static void calcPixelCostBT2(const Mat& img1, const Mat& img2, int y,
 	#pragma endregion
 
 	const PixType* row1 = img1.ptr<PixType>(y), * row2 = img2.ptr<PixType>(y);
-	PixType* prow1 = buffer + width2 * 2, * prow2 = prow1 + width * cn * 2;
+	PixType* prow1 = buffer + width2 * 2; 
+	PixType* prow2 = prow1 + width * 2;
 
 	for (c = 0; c < cn * 2; c++)
 	{
@@ -217,9 +221,9 @@ public:
 		fullDP = params.isFullDP();
 		costWidth = width1 * Da;
 		costHeight = height1 * Da;
-		hsumRows = params.calcSADWindowSize().height + 2;
-		dirs = params.mode == StereoSGBM::MODE_HH4 ? 1 : NR;
-		dirs2 = params.mode == StereoSGBM::MODE_HH4 ? 1 : NR2;
+		hsumRows = 3;
+		dirs = NR;
+		dirs2 = NR2;
 		// for each possible stereo match (img1(x,y) <=> img2(x-d,y))
 		// we keep pixel difference cost (C) and the summary cost over NR directions (S).
 		// we also keep all the partial costs for the previous line L_r(x,d) and also min_k L_r(x, k)
@@ -228,7 +232,7 @@ public:
 		area.allocate(hsumBuf, costWidth * hsumRows, CV_SIMD_WIDTH);
 		area.allocate(vsumBuf, costHeight * hsumRows, CV_SIMD_WIDTH);
 		area.allocate(pixDiffH, costWidth, CV_SIMD_WIDTH);
-		area.allocate(pixDiffV, height1*Da, CV_SIMD_WIDTH);
+		area.allocate(pixDiffV, costHeight, CV_SIMD_WIDTH);
 		area.allocate(disp2cost, width, CV_SIMD_WIDTH);
 		area.allocate(disp2ptr, width, CV_SIMD_WIDTH);
 		area.allocate(tempBuf, width * (4 * cn + 2), CV_SIMD_WIDTH);
@@ -341,9 +345,11 @@ public:
 	disp2cost also has the same size as img1 (or img2).
 	It contains the minimum current cost, used to find the best disparity, corresponding to the minimal cost.
 	*/
-static void computeDisparitySGBM2(const Mat& img1, const Mat& img2,
+static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point2i> disparityDirection,
 	Mat& disp1, const StereoSGBMParams2& params)
 {
+	Mat img1 = images[0];
+	Mat img2 = images[1];
 	const int DISP_SHIFT = StereoMatcher::DISP_SHIFT;
 	const int DISP_SCALE = (1 << DISP_SHIFT);
 	const CostType MAX_COST = SHRT_MAX;
@@ -381,39 +387,38 @@ static void computeDisparitySGBM2(const Mat& img1, const Mat& img2,
 
 	int y1 = 0, y2 = height, dy = 1;
 	int x1 = 0, x2 = width1, dx = 1;
+
 	// Generate Cost function
 	for (int y = y1; y != y2; y += dy)	// Iterate through all rows
 	{
 		int x, d;
-		DispType* disp1ptr = disp1.ptr<DispType>(y);
 		CostType* const C = mem.getCBuf(y);
-		CostType* const S = mem.getSBuf(y);
 
 		CostType* hsumAdd = mem.getHSumBuf(y);
 		calcPixelCostBT2(img1, img2, y, minD, maxD, mem.pixDiffH, mem.tempBuf, mem.getClipTab());
 		memset(hsumAdd, 0, Da * sizeof(CostType));	// Set hsumAdd to 0's
-		for (d = 0; d < Da; d += v_int16::nlanes) // For each disparity add both the pixDiff and the pixDerivativeDiff
+		for (d = 0; d < Da; d += v_int16::nlanes) // For each disparity add both the pixDiff
 		{
 			v_int16 v_hsumAdd = vx_load_aligned(mem.pixDiffH + d);
-			v_hsumAdd += vx_load_aligned(mem.pixDiffH + Da + d);
+			//v_hsumAdd += vx_load_aligned(mem.pixDiffH + Da + d);
 			v_store_aligned(hsumAdd + d, v_hsumAdd);
 		}
 
 		if (y > 0)
 		{
-			const CostType* hsumSub = mem.getHSumBuf(std::max(y - 1, 0));
-			const CostType* Cprev = mem.getCBuf(y - 1);
+			const CostType* hsumSub = mem.getHSumBuf(y - 1); // Cost at previous row
+			const CostType* Cprev = mem.getCBuf(y - 1);	// Cost at previous row
 
 			for (d = 0; d < Da; d += v_int16::nlanes)
-				v_store_aligned(C + d, vx_load_aligned(Cprev + d) + vx_load_aligned(hsumAdd + d) - vx_load_aligned(hsumSub + d));
+				v_store_aligned(C + d, vx_load_aligned(mem.pixDiffH + d));
 
 			for (x = Da; x < width1 * Da; x += Da)
 			{
-				const CostType* pixAdd = mem.pixDiffH + std::min(x + Da, (width1 - 1) * Da);
-				const CostType* pixSub = mem.pixDiffH + std::max(x - Da, 0);
+				const CostType* pixAdd = mem.pixDiffH + x; // Cost at next pixel
+				const CostType* pixSub = mem.pixDiffH + x - Da; // Cost at previous pixel
 				for (d = 0; d < Da; d += v_int16::nlanes)
 				{
-					v_int16 hv = vx_load_aligned(hsumAdd + x - Da + d) - vx_load_aligned(pixSub + d) + vx_load_aligned(pixAdd + d);
+					v_int16 hv = vx_load_aligned(hsumAdd + x - Da + d) + vx_load_aligned(pixAdd + d) - vx_load_aligned(pixSub + d);
 					v_store_aligned(hsumAdd + x + d, hv);
 					v_store_aligned(C + x + d, vx_load_aligned(Cprev + x + d) - vx_load_aligned(hsumSub + x + d) + hv);
 				}
@@ -421,19 +426,17 @@ static void computeDisparitySGBM2(const Mat& img1, const Mat& img2,
 		}
 		else
 		{
-			v_int16 v_scale = vx_setall_s16(1);
 			for (d = 0; d < Da; d += v_int16::nlanes)
-				v_store_aligned(C + d, vx_load_aligned(C + d) + vx_load_aligned(hsumAdd + d) * v_scale);
+				v_store_aligned(C + d, vx_load_aligned(C + d) + vx_load_aligned(hsumAdd + d));
 			for (x = Da; x < width1 * Da; x += Da)
 			{
-				const CostType* pixAdd = mem.pixDiffH + std::min(x + Da, (width1 - 1) * Da);
-				const CostType* pixSub = mem.pixDiffH + std::max(x - Da, 0);
-
+				const CostType* pixAdd = mem.pixDiffH + x;	// Cost at next pixel
+				const CostType* pixSub = mem.pixDiffH + x - Da; // Cost at previous pixel
 				for (d = 0; d < Da; d += v_int16::nlanes)
 				{
-					v_int16 hv = vx_load_aligned(hsumAdd + x - Da + d) + vx_load_aligned(pixAdd + d) - vx_load_aligned(pixSub + d);
+					v_int16 hv = vx_load_aligned(hsumAdd + x + d - Da) + vx_load_aligned(pixAdd + d) - vx_load_aligned(pixSub + d);
 					v_store_aligned(hsumAdd + x + d, hv);
-					v_store_aligned(C + x + d, vx_load_aligned(C + x + d) + hv * v_scale);
+					v_store_aligned(C + x + d, vx_load_aligned(C + x + d) + hv);
 				}
 			}
 		}
@@ -757,19 +760,13 @@ StereoSGBMImpl2::StereoSGBMImpl2(int _minDisparity, int _numDisparities, int _SA
 	// nothing
 }
 
-void StereoSGBMImpl2::compute(InputArray leftarr, InputArray rightarr, OutputArray disparr)
+void StereoSGBMImpl2::computeMultiCam(std::vector<Mat> images, std::vector<cv::Point2i> disparityDirection, OutputArray disparr)
 {
 	CV_INSTRUMENT_REGION();
-
-	Mat left = leftarr.getMat();
-	Mat right = rightarr.getMat();
-	CV_Assert(left.size() == right.size() && left.type() == right.type() &&
-		left.depth() == CV_8U);
-
-	disparr.create(left.size(), CV_16S);
+	disparr.create(images[0].size(), CV_16S);
 	Mat disp = disparr.getMat();
 
-	computeDisparitySGBM2(left, right, disp, params);
+	computeDisparitySGBM2(images, disparityDirection, disp, params);
 
 	cv::medianBlur(disp, disp, 3);
 
@@ -778,20 +775,28 @@ void StereoSGBMImpl2::compute(InputArray leftarr, InputArray rightarr, OutputArr
 			StereoMatcher::DISP_SCALE * params.speckleRange, buffer);
 }
 
-
-
-Ptr<StereoSGBM> StereoSGBM::create(int minDisparity, int numDisparities, int SADWindowSize,
-	int P1, int P2, int disp12MaxDiff,
-	int preFilterCap, int uniquenessRatio,
-	int speckleWindowSize, int speckleRange,
-	int mode)
+void StereoSGBMImpl2::compute(cv::InputArray leftarr, cv::InputArray rightarr, OutputArray disparr)
 {
-	return Ptr<StereoSGBM>(
-		new StereoSGBMImpl2(minDisparity, numDisparities, SADWindowSize,
-			P1, P2, disp12MaxDiff,
-			preFilterCap, uniquenessRatio,
-			speckleWindowSize, speckleRange,
-			mode));
+	CV_INSTRUMENT_REGION();
+
+	//Mat left = leftarr.getMat();
+	//Mat right = rightarr.getMat();
+	//CV_Assert(left.size() == right.size() && left.type() == right.type() &&
+	//	left.depth() == CV_8U);
+	std::cout << "Before" << std::endl;
+	//StereoSGBM::compute(leftarr, rightarr, disparr);
+	std::cout << "Function out of use in this format. Use: " << std::endl << 
+		"compute(std::vector<Mat> & images, std::vector<cv::Point2i> disparityDirection, OutputArray disparr)" << std::endl;
+	//disparr.create(images[0].size(), CV_16S);
+	//Mat disp = disparr.getMat();
+
+	//computeDisparitySGBM(images, disparityDirection, disp, params);
+
+	//cv::medianBlur(disp, disp, 3);
+
+	//if (params.speckleWindowSize > 0)
+	//	filterSpeckles(disp, (params.minDisparity - 1) * StereoMatcher::DISP_SCALE, params.speckleWindowSize,
+	//		StereoMatcher::DISP_SCALE * params.speckleRange, buffer);
 }
 
 Rect getValidDisparityROI(Rect roi1, Rect roi2, int minDisparity, int numberOfDisparities, int SADWindowSize)

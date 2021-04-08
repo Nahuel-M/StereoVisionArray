@@ -61,11 +61,6 @@ struct StereoSGBMParams2
 	int mode;
 };
 
-
-static void computeDisparitySGBM2(const cv::Mat& img1, const cv::Mat& img2,
-	cv::Mat& disp1, const StereoSGBMParams2& params);
-
-
 class StereoSGBMImpl2 : public cv::StereoSGBM
 {
 public:
@@ -75,7 +70,14 @@ public:
 		int _uniquenessRatio, int _speckleWindowSize, int _speckleRange,
 		int _mode);
 
+	//void create(int minDisparity, int numDisparities, int SADWindowSize,
+	//	int P1, int P2, int disp12MaxDiff,
+	//	int preFilterCap, int uniquenessRatio,
+	//	int speckleWindowSize, int speckleRange,
+	//	int mode);
+
 	void compute(cv::InputArray leftarr, cv::InputArray rightarr, cv::OutputArray disparr);
+	void computeMultiCam(std::vector<cv::Mat> images, std::vector<cv::Point2i> disparityDirection, cv::OutputArray disparr);
 
 	int getMinDisparity() const { return params.minDisparity; }
 	void setMinDisparity(int minDisparity) { params.minDisparity = minDisparity; }

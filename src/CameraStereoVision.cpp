@@ -39,9 +39,8 @@ int main()
 	mask = drawMask(images.back(), maskPoints);
 
 
-	std::vector<std::array<int, 2>> pairs = getCameraPairs(cameras, MID_RIGHT);
-	Rect roi = Rect{ Point2i(437*4, 237*4), Point2i(914*4, 461*4) };
-	cv::Mat rightDisp;
+	std::vector<std::array<int, 2>> pairs;
+	Rect roi = Rect{ Point2i(337*4, 137*4), Point2i(914*4, 561*4) };
 
 	int disp12MaxDiff = 3;
 	int preFilterCap = 4;//PreFilterCap			4
@@ -51,17 +50,22 @@ int main()
 	int P1 = 16;
 	int P2 = 192;
 	pairs = getCameraPairs(cameras, MID_RIGHT);
-	Mat disparity;
+	StereoSGBMImpl2 sgbm2 = StereoSGBMImpl2(250, 48, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
 	Ptr<StereoSGBM> sgbm = StereoSGBM::create(250, 48, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
-	Mat im1 = images[pairs[0][0]];
-	Mat im2 = images[pairs[0][1]];
-	//showImage("im1", im1(roi));
-	//showImage("im2", im2(roi));
-	Mat im1n, im2n;
-	blur(im1, im1n, Size{ 6, 6 });
-	blur(im2, im2n, Size{ 6, 6 });
-
-	sgbm->compute(im2n(roi), im1n(roi), disparity);
+	std::vector<Mat> imageVector;
+	std::vector<Point2i> directions;
+	pairs = getCameraPairs(cameras, CROSS);
+	imageVector.push_back(images[pairs[0][0]](roi));
+	for (auto p : pairs)
+	{
+		imageVector.push_back(images[p[1]](roi));
+		Point3d dir = (cameras[p[1]].pos3D - cameras[p[0]].pos3D);
+		directions.push_back(Point2i{ (dir.x > 0) - (dir.x < 0), (dir.y > 0) - (dir.y < 0) });
+	}
+	Mat disparity;
+	sgbm->compute(imageVector[0], imageVector[1], disparity);
+	showImage("disparity", disparity - 4150, 60, false);
+	sgbm2.computeMultiCam(imageVector, directions, disparity);
 	showImage("disparity2", disparity - 4150, 60, true);
 
 
