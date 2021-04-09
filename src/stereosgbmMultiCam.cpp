@@ -159,6 +159,7 @@ static void calcPixelCostBT2(const Mat& img1, const Mat& img2, int y,
 	}
 }
 
+
 class BufferSGBM
 {
 private:
@@ -235,7 +236,7 @@ public:
 		area.allocate(pixDiffV, costHeight, CV_SIMD_WIDTH);
 		area.allocate(disp2cost, width, CV_SIMD_WIDTH);
 		area.allocate(disp2ptr, width, CV_SIMD_WIDTH);
-		area.allocate(tempBuf, width * (4 * cn + 2), CV_SIMD_WIDTH);
+		area.allocate(tempBuf, width * (6 * cn + 3), CV_SIMD_WIDTH);
 		// the number of L_r(.,.) and min_k L_r(.,.) lines in the buffer:
 		// for 8-way dynamic programming we need the current row and
 		// the previous row, i.e. 2 rows in total
@@ -296,12 +297,12 @@ public:
 	inline CostType* getCBuf(int row) const
 	{
 		CV_Assert(row >= 0);
-		return Cbuf + (!fullDP ? 0 : (row * costWidth));
+		return Cbuf + row * costWidth;
 	}
 	inline CostType* getSBuf(int row) const
 	{
 		CV_Assert(row >= 0);
-		return Sbuf + (!fullDP ? 0 : (row * costWidth));
+		return Sbuf + row * costWidth;
 	}
 	inline void clearSBuf(int row, const Range& range = Range::all()) const
 	{
@@ -327,6 +328,125 @@ public:
 		return minLr[id] + fixed_offset + (idx * dirs2 + shift);
 	}
 };
+
+
+static void calcPixelCostBT2MultiCam(Mat& img1, Mat& img2, Mat& img3,
+	int minD, int maxD, CostType* costOrigin, int rowStep, int colStep, PixType* buffer, const PixType* tab)
+{
+	#pragma region LoadParameters
+	int x, c, width = img1.cols, cn = img1.channels();
+	//int minX1 = std::max(maxD, 0), maxX1 = width - std::max(maxD, 0);
+	int minX1 = maxD, maxX1 = width - maxD;
+	int D = (int)alignSize(maxD - minD, v_int16::nlanes);
+	int width1 = maxX1 - minX1;	// Actual width to be iterated over in img1
+	int height = img1.rows;
+	#pragma endregion
+
+	for (int y = maxD; y < height-maxD; y++)
+	{
+		CostType* cost = costOrigin + y * rowStep;
+		const PixType* row1 = img1.ptr<PixType>(y), * row2 = img2.ptr<PixType>(y), * row3 = img3.ptr<PixType>(y);
+		PixType* prow1 = buffer + width * 5;
+		PixType* prow2 = prow1 + width * 2;
+		PixType* prow3 = prow2 + width * 2;
+		for (c = 0; c < 2; c++)
+		{
+			prow1[width * c] = prow1[width * c + width - 1] =
+				prow2[width * c] = prow2[width * c + width - 1] =
+				prow3[width * c] = prow3[width * c + width - 1] = tab[0];
+		}
+
+		int n1 = y > 0 ? -(int)img1.step : 0, s1 = y < img1.rows - 1 ? (int)img1.step : 0;
+		int n2 = y > 0 ? -(int)img2.step : 0, s2 = y < img2.rows - 1 ? (int)img2.step : 0;
+		int n3 = y > 0 ? -(int)img3.step : 0, s3 = y < img3.rows - 1 ? (int)img3.step : 0;
+
+		for (x = 0; x < width; x++)
+		{
+			prow1[x] = tab[(row1[x + 1] - row1[x - 1]) * 2 + row1[x + n1 + 1] - row1[x + n1 - 1] + row1[x + s1 + 1] - row1[x + s1 - 1]];
+			prow2[width - 1 - x] = tab[(row2[x + 1] - row2[x - 1]) * 2 + row2[x + n2 + 1] - row2[x + n2 - 1] + row2[x + s2 + 1] - row2[x + s2 - 1]];
+			prow3[width - 1 - x] = tab[(row3[x + 1] - row3[x - 1]) * 2 + row3[x + n3 + 1] - row3[x + n3 - 1] + row3[x + s3 + 1] - row3[x + s3 - 1]];
+
+			prow1[x + width] = row1[x];
+			prow2[width - 1 - x + width] = row2[x];
+			prow3[width - 1 - x + width] = row3[x];
+		}
+
+		//memset(cost, 0, width1 * D * sizeof(cost[0]));
+		cost -= minX1 * D + minD; // simplify the cost indices inside the loop
+
+		for (c = 0; c < cn * 2; c++, prow1 += width, prow2 += width)
+		{
+			int diff_scale = c * 2;
+			for (x = 1; x < width-1; x++)
+			{
+				int v = prow2[x];
+				int vl = x > 0 ? (v + prow2[x - 1]) / 2 : v;
+				int vr = x < width - 1 ? (v + prow2[x + 1]) / 2 : v;
+				int v0 = std::min(vl, vr); v0 = std::min(v0, v);
+				int v1 = std::max(vl, vr); v1 = std::max(v1, v);
+				buffer[2 * x] = (PixType)v0;
+				buffer[2 * x + width] = (PixType)v1;
+
+				int v_2 = prow3[x];
+				int vl_2 = x > 0 ? (v_2 + prow3[x - 1]) / 2 : v_2;
+				int vr_2 = x < width - 1 ? (v_2 + prow3[x + 1]) / 2 : v_2;
+				int v0_2 = std::min(vl_2, vr_2); v0_2 = std::min(v0_2, v_2);
+				int v1_2 = std::max(vl_2, vr_2); v1_2 = std::max(v1_2, v_2);
+				buffer[2 * x + 2 * width] = (PixType)v0_2;
+				buffer[2 * x + 3 * width] = (PixType)v1_2;
+			}
+
+			for (x = minX1; x < maxX1; x++)
+			{
+				int u = prow1[x];
+				int ul = x > 0 ? (u + prow1[x - 1]) / 2 : u;
+				int ur = x < width - 1 ? (u + prow1[x + 1]) / 2 : u;
+				int u0 = std::min(ul, ur); u0 = std::min(u0, u);
+				int u1 = std::max(ul, ur); u1 = std::max(u1, u);
+
+				int d = minD;
+//#if CV_SIMD
+//				v_uint8 _u = vx_setall_u8((uchar)u), _u0 = vx_setall_u8((uchar)u0);
+//				v_uint8 _u1 = vx_setall_u8((uchar)u1);
+//
+//				for (; d <= maxD - 2 * v_int16::nlanes; d += 2 * v_int16::nlanes)
+//				{
+//					v_uint8 _v = vx_load(prow2 + width - x - 1 + d);
+//					v_uint8 _v0 = vx_load(buffer + width - x - 1 + d);
+//					v_uint8 _v1 = vx_load(buffer + width - x - 1 + d + widthN);
+//					v_uint8 c0 = v_max(_u - _v1, _v0 - _u);
+//					v_uint8 c1 = v_max(_v - _u1, _u0 - _v);
+//					v_uint8 diff = v_min(c0, c1);
+//
+//					v_int16 _c0 = vx_load_aligned(cost + x * D + d);
+//					v_int16 _c1 = vx_load_aligned(cost + x * D + d + v_int16::nlanes);
+//
+//					v_uint16 diff1, diff2;
+//					v_expand(diff, diff1, diff2);
+//					v_store_aligned(cost + x * D + d, _c0 + v_reinterpret_as_s16(diff1 >> diff_scale));
+//					v_store_aligned(cost + x * D + d + v_int16::nlanes, _c1 + v_reinterpret_as_s16(diff2 >> diff_scale));
+//				}
+//#endif
+				for (; d < maxD; d++)
+				{
+					int v = prow2[width - x - 1 + d];
+					int v_2 = prow3[width - x - 1 + d];
+					int v0 = buffer[2 * (width - x - 1 + d)];
+					int v1 = buffer[2 * (width - x - 1 + d) + width];
+					int v0_2 = buffer[2 * (width - x - 1 - d) + width * 2];
+					int v1_2 = buffer[2 * (width - x - 1 - d) + width * 3];
+					int c0 = std::max(0, u - v1); c0 = std::max(c0, v0 - u);
+					int c1 = std::max(0, v - u1); c1 = std::max(c1, u0 - v);
+					int c0_2 = std::max(0, u - v1_2); c0_2 = std::max(c0_2, v0_2 - u);
+					int c1_2 = std::max(0, v_2 - u1); c1_2 = std::max(c1_2, u0 - v_2);
+
+					cost[x * D + d] = (CostType)(cost[x * D + d] + ((min(c0, c1) + min(c0_2, c1_2))/2 >> diff_scale));
+				}
+			}
+		}
+	}
+}
+
 
 /*
 	computes disparity for "roi" in img1 w.r.t. img2 and write it to disp1buf.
@@ -388,61 +508,39 @@ static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point
 	int y1 = 0, y2 = height, dy = 1;
 	int x1 = 0, x2 = width1, dx = 1;
 
-	// Generate Cost function
-	for (int y = y1; y != y2; y += dy)	// Iterate through all rows
+	std::vector<Mat> hImages; std::vector<int> hDir;
+	std::vector<Mat> vImages; std::vector<int> vDir;
+
+	std::cout << disparityDirection << std::endl;
+	hImages.push_back(images[0]);
+	vImages.push_back(images[0].t());
+	for (size_t i = 0; i < disparityDirection.size(); i++)
 	{
-		int x, d;
-		CostType* const C = mem.getCBuf(y);
-
-		CostType* hsumAdd = mem.getHSumBuf(y);
-		calcPixelCostBT2(img1, img2, y, minD, maxD, mem.pixDiffH, mem.tempBuf, mem.getClipTab());
-		memset(hsumAdd, 0, Da * sizeof(CostType));	// Set hsumAdd to 0's
-		for (d = 0; d < Da; d += v_int16::nlanes) // For each disparity add both the pixDiff
-		{
-			v_int16 v_hsumAdd = vx_load_aligned(mem.pixDiffH + d);
-			//v_hsumAdd += vx_load_aligned(mem.pixDiffH + Da + d);
-			v_store_aligned(hsumAdd + d, v_hsumAdd);
-		}
-
-		if (y > 0)
-		{
-			const CostType* hsumSub = mem.getHSumBuf(y - 1); // Cost at previous row
-			const CostType* Cprev = mem.getCBuf(y - 1);	// Cost at previous row
-
-			for (d = 0; d < Da; d += v_int16::nlanes)
-				v_store_aligned(C + d, vx_load_aligned(mem.pixDiffH + d));
-
-			for (x = Da; x < width1 * Da; x += Da)
-			{
-				const CostType* pixAdd = mem.pixDiffH + x; // Cost at next pixel
-				const CostType* pixSub = mem.pixDiffH + x - Da; // Cost at previous pixel
-				for (d = 0; d < Da; d += v_int16::nlanes)
-				{
-					v_int16 hv = vx_load_aligned(hsumAdd + x - Da + d) + vx_load_aligned(pixAdd + d) - vx_load_aligned(pixSub + d);
-					v_store_aligned(hsumAdd + x + d, hv);
-					v_store_aligned(C + x + d, vx_load_aligned(Cprev + x + d) - vx_load_aligned(hsumSub + x + d) + hv);
-				}
-			}
+		if (disparityDirection[i].x != 0) {
+			hImages.push_back(images[i+1]);
+			hDir.push_back(disparityDirection[i].x);
 		}
 		else
 		{
-			for (d = 0; d < Da; d += v_int16::nlanes)
-				v_store_aligned(C + d, vx_load_aligned(C + d) + vx_load_aligned(hsumAdd + d));
-			for (x = Da; x < width1 * Da; x += Da)
-			{
-				const CostType* pixAdd = mem.pixDiffH + x;	// Cost at next pixel
-				const CostType* pixSub = mem.pixDiffH + x - Da; // Cost at previous pixel
-				for (d = 0; d < Da; d += v_int16::nlanes)
-				{
-					v_int16 hv = vx_load_aligned(hsumAdd + x + d - Da) + vx_load_aligned(pixAdd + d) - vx_load_aligned(pixSub + d);
-					v_store_aligned(hsumAdd + x + d, hv);
-					v_store_aligned(C + x + d, vx_load_aligned(C + x + d) + hv);
-				}
-			}
+			vImages.push_back(images[i+1].t());
+			vDir.push_back(disparityDirection[i].y);
 		}
-		// also, clear the S buffer
-		mem.clearSBuf(y);
 	}
+
+
+
+
+	int rowStep = Da * width1;
+	int colStep = 1;
+	CostType* C = mem.getCBuf(0);	
+	memset(C, 0, width1 * height * D * sizeof(C[0]));
+	calcPixelCostBT2MultiCam(hImages[0], hImages[1], hImages[2], minD, maxD, C, rowStep, colStep, mem.tempBuf, mem.getClipTab());
+	// Generate Cost function
+	//for (int y = y1; y != y2; y += dy)	// Iterate through all rows
+	//{
+	//	CostType* const C = mem.getCBuf(y);
+	//	calcPixelCostBT2(img1, img2, y, minD, maxD, C, mem.tempBuf, mem.getClipTab());
+	//}
 
 	for (int pass = 1; pass <= npasses; pass++)
 	{

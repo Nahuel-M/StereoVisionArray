@@ -45,10 +45,10 @@ int main()
 	int disp12MaxDiff = 3;
 	int preFilterCap = 4;//PreFilterCap			4
 	int uniqRatio = 2;	// Uniqueness ratio		
-	int sWinSize = 100;	// Speckle window size	100
+	int sWinSize = 200;	// Speckle window size	100
 	int sRange = 5;	// Speckle range
-	int P1 = 16;
-	int P2 = 192;
+	int P1 = 8;
+	int P2 = 300;
 	pairs = getCameraPairs(cameras, MID_RIGHT);
 	StereoSGBMImpl2 sgbm2 = StereoSGBMImpl2(250, 48, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
 	Ptr<StereoSGBM> sgbm = StereoSGBM::create(250, 48, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
@@ -64,9 +64,9 @@ int main()
 	}
 	Mat disparity;
 	sgbm->compute(imageVector[0], imageVector[1], disparity);
-	showImage("disparity", disparity - 4150, 60, false);
+	showImage("disparity", disparity - 4300, 70, false);
 	sgbm2.computeMultiCam(imageVector, directions, disparity);
-	showImage("disparity2", disparity - 4150, 60, true);
+	showImage("disparity2", disparity - 4300, 70, true);
 
 
 
