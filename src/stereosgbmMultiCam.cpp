@@ -469,7 +469,7 @@ static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point
 	{
 		calcPixelCostBT2MultiCam(hImages[0], hImages[1], hImages[2], minD, maxD, C, rowStep, colStep, matchCount, mem.tempBuf, mem.getClipTab());
 	}
-	else
+	else if (hImages.size() == 2)
 	{
 		calcPixelCostBT2(hImages[0], hImages[1], minD, maxD, C, rowStep, colStep, matchCount, hDir[0], mem.tempBuf, mem.getClipTab());
 	}
@@ -479,7 +479,7 @@ static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point
 	{
 		calcPixelCostBT2MultiCam(vImages[0], vImages[2], vImages[1], minD, maxD, C, rowStep, colStep, matchCount, mem.tempBuf, mem.getClipTab());
 	}
-	else
+	else if (vImages.size() == 2)
 	{
 		calcPixelCostBT2(vImages[0], vImages[1], minD, maxD, C, rowStep, colStep, matchCount, vDir[0], mem.tempBuf, mem.getClipTab());
 	}

@@ -93,3 +93,5 @@ void getCameraIntrinsicParameters(std::string filePath, cv::Mat& K, cv::Mat& D);
 void undistortImages(std::vector<cv::Mat>& images, cv::Mat& K, cv::Mat& D, bool verbose = false);
 
 void exportOBJfromDisparity(cv::Mat depthImage, std::string fileName, Camera cam1, Camera cam2, float scale = 1.f);
+
+cv::Mat getCrossSGM(int centerCam, StereoSGBMImpl2 sgbm, bool verbose = false);

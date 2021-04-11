@@ -821,3 +821,26 @@ void exportOBJfromDisparity(cv::Mat disparityImage, std::string fileName, Camera
 	}
 	outputFile.close();
 }
+
+Mat getCrossSGM(int centerCam, StereoSGBMImpl2 sgbm, bool verbose) 
+{
+	std::vector<Mat> imageVector;
+	std::vector<Point2i> directions;
+	std::vector<std::array<int, 2>> pairs = getCameraPairs(cameras, CROSS, centerCam);
+	imageVector.push_back(images[pairs[0][0]]);
+	showImage("imgC", imageVector[0]);
+	Mat disparity;
+	for (auto p : pairs)
+	{
+		imageVector.push_back(images[p[1]]);
+		Point3d dir = (cameras[p[1]].pos3D - cameras[p[0]].pos3D);
+		directions.push_back(Point2i{ (dir.x > 0) - (dir.x < 0), (dir.y > 0) - (dir.y < 0) });
+		if (verbose) {
+			sgbm.computeMultiCam(std::vector<Mat>{images[pairs[0][0]], images[p[1]]}, std::vector<Point2i>{Point2i{ (dir.x > 0) - (dir.x < 0), (dir.y > 0) - (dir.y < 0) }}, disparity);
+			showImage("subdisparity cam: " + std::to_string(p[1]), disparity - 4300, 70, false);
+		}
+			
+	}
+	sgbm.computeMultiCam(imageVector, directions, disparity);
+	return disparity;
+}
