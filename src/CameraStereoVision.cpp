@@ -26,7 +26,7 @@ int main()
 	std::vector<double> err;
 
 	/// Images
-	getImages(images, "Photographs\\Series1Test", 1);
+	getImages(images, "Photographs\\Series1WhiteBalanced", 1);
 	getCameraIntrinsicParameters("..\\CameraCalibration\\calibration\\CalibrationFile", K, D);
 	undistortImages(images, K, D);
 
@@ -40,7 +40,8 @@ int main()
 
 
 	std::vector<std::array<int, 2>> pairs;
-	Rect roi = Rect{ Point2i(337*4, 137*4), Point2i(914*4, 561*4) };
+	//Rect roi = Rect{ Point2i(337*4, 137*4), Point2i(914*4, 561*4) };
+	Rect roi = Rect{ Point2i(1300, 500), Point2i(3300, 2300) };
 
 	int disp12MaxDiff = 3;
 	int preFilterCap = 4;//PreFilterCap			4
@@ -54,11 +55,12 @@ int main()
 	Ptr<StereoSGBM> sgbm = StereoSGBM::create(250, 48, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
 	std::vector<Mat> imageVector;
 	std::vector<Point2i> directions;
-	pairs = getCameraPairs(cameras, CROSS);
+	pairs = getCameraPairs(cameras, CROSS, 12);
 	imageVector.push_back(images[pairs[0][0]](roi));
 	for (auto p : pairs)
 	{
 		imageVector.push_back(images[p[1]](roi));
+		showImage("img", images[p[1]]);
 		Point3d dir = (cameras[p[1]].pos3D - cameras[p[0]].pos3D);
 		directions.push_back(Point2i{ (dir.x > 0) - (dir.x < 0), (dir.y > 0) - (dir.y < 0) });
 	}
@@ -70,7 +72,7 @@ int main()
 
 
 
-	//exportOBJfromDisparity(disparity, "disparityTest.obj", cameras[0], cameras[1], 0.5);
+	exportOBJfromDisparity(disparity, "disparityTest.obj", cameras[0], cameras[1], 0.5);
 
 	//cv::Mat topDisp = getDisparityFromPairSGM(pairs[0]);
 	//showImage("topDisparity", topDisp, 5, false);
