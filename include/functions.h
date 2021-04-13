@@ -95,3 +95,7 @@ void undistortImages(std::vector<cv::Mat>& images, cv::Mat& K, cv::Mat& D, bool 
 void exportOBJfromDisparity(cv::Mat depthImage, std::string fileName, Camera cam1, Camera cam2, float scale = 1.f);
 
 cv::Mat getCrossSGM(int centerCam, StereoSGBMImpl2 sgbm, bool verbose = false);
+
+float getAvgDiffWithAbsoluteReference(cv::Mat disparity, bool verbose, std::string savePath = "");
+
+void blurImages(std::vector<cv::Mat>& images, int blurKernel);

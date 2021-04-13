@@ -26,12 +26,16 @@ int main()
 	std::vector<double> err;
 
 	/// Images
-	getImages(images, "Photographs\\Series1WhiteBalanced", 1);
-	getCameraIntrinsicParameters("..\\CameraCalibration\\calibration\\CalibrationFile", K, D);
-	undistortImages(images, K, D);
+	getImages(images, "Renders2", 1);
+	//getCameraIntrinsicParameters("..\\CameraCalibration\\calibration\\CalibrationFile", K, D);
+	//undistortImages(images, K, D);
+	blurImages(images, 3);
 
 	/// Cameras
-	getCameras(cameras, images.back().size(), 6e-3, 0, 1.55e-6);
+	//double f = 0.05;
+	//double sensor_size = 0.036;
+	//getCameras(cameras, images.back().size(), 6e-3, 0, 1.55e-6);
+	getCameras(cameras, images.back().size());
 
 	/// Mask
 	//std::vector<cv::Point2i> maskPoints = getFaceMaskPoints(images[12]);
@@ -48,27 +52,26 @@ int main()
 	int uniqRatio = 2;	// Uniqueness ratio		
 	int sWinSize = 200;	// Speckle window size	100
 	int sRange = 5;	// Speckle range
-	int P1 = 8;
-	int P2 = 300;
-	StereoSGBMImpl2 sgbm = StereoSGBMImpl2(250, 48, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
+	int P1 = 5;
+	int P2 = 192;
+	StereoSGBMImpl2 sgbm = StereoSGBMImpl2(275, 64, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange);
+
 	//Ptr<StereoSGBM> sgbm = StereoSGBM::create(250, 48, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
 
-	Mat disparity = getCrossSGM(11, sgbm, true);
+	for(int i = 0; i < 15; i++)
+	{
+		Mat disparity = getCrossSGM(12, sgbm, false);
+		//blurImages(images, 3);
+		//showImage("disparity2", disparity - 4800, 70, false);
+		std::cout << getAvgDiffWithAbsoluteReference(disparity, false) << std::endl;
+	}
 
-	showImage("disparity2", disparity - 4300, 70, true);
+	//disparity = getCrossSGM(17, sgbm, true);
 
-	disparity = getCrossSGM(17, sgbm, true);
 
-	showImage("disparity2", disparity - 4300, 70, true);
 
-	exportOBJfromDisparity(disparity, "disparityTest.obj", cameras[0], cameras[1], 0.5);
+	//exportOBJfromDisparity(disparity, "disparityTest.obj", cameras[0], cameras[1], 0.5);
 
-	//cv::Mat topDisp = getDisparityFromPairSGM(pairs[0]);
-	//showImage("topDisparity", topDisp, 5, false);
-
-	//pairs = getCameraPairs(cameras, MID_LEFT);
-	//cv::Mat leftDisp = getDisparityFromPairSGM(pairs[0]);
-	//showImage("leftDisp", leftDisp, 5, false);
 
 	//Mat deltaH = getBlurredSlope(images[12], 0);
 	//Mat deltaV = getBlurredSlope(images[12], 1);

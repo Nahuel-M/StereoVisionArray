@@ -77,8 +77,8 @@ static void CallBackFuncs(int event, int x, int y, int flags, void* param)
 
 }
 
-void showImage(std::string name, cv::Mat image, double multiplier, bool hold) {
-	cv::resize(image, image, cv::Size(), 0.3, 0.3);
+void showImage(std::string name, cv::Mat image, double multiplier, bool hold, float scale) {
+	cv::resize(image, image, cv::Size(), scale, scale);
 	cv::namedWindow(name, cv::WindowFlags::WINDOW_AUTOSIZE);
 	cv::imshow(name, image * multiplier);
 	if (hold)

@@ -5,7 +5,7 @@
 #include "precomp.hpp"
 #include "opencv2/core/hal/intrin.hpp"
 #include "opencv2/core/utils/buffer_area.private.hpp"
-#include "stereosgbmMultiCam.h"
+#include "stereoArraySGM.h"
 #include "imageHandling.h"
 
 
@@ -48,14 +48,14 @@ static void calcPixelCostBT2(const Mat& img1, const Mat& img2,
 	int minD, int maxD, CostType* costOrigin, int rowStep, int colStep, int matchCount, int direction,
 	PixType* buffer, const PixType* tab)
 {
-	#pragma region LoadParameters
+#pragma region LoadParameters
 	int x, c, width = img1.cols, cn = img1.channels();
 	//int minX1 = std::max(maxD, 0), maxX1 = width - std::max(maxD, 0);
 	int minX1 = maxD, maxX1 = width - maxD;
 	int D = (int)alignSize(maxD - minD, v_int16::nlanes);
 	int width1 = maxX1 - minX1;	// Actual width to be iterated over in img1
 	int height = img1.rows;
-	#pragma endregion
+#pragma endregion
 	costOrigin -= minD + maxD * colStep + maxD * rowStep;
 	for (int y = maxD; y < height - maxD; y++)
 	{
@@ -127,6 +127,61 @@ static void calcPixelCostBT2(const Mat& img1, const Mat& img2,
 	}
 }
 
+static void calcPixelwiseArrayCost(std::vector<cv::Mat>& images, cv::Rect area, cv::Size arrayShape, int centerCamId,
+	int minD, int maxD, CostType* costOrigin,
+	PixType* buffer, const PixType* tab)
+{
+	int camCount = images.size();
+	int D = maxD - minD;
+	int width = images[0].cols;
+	int height = images[0].rows;
+
+	std::array<Point2i, 25> disparityStep;
+	std::array<PixType*, 25> imagePointers;
+	for (int i = 0; i < camCount; i++)
+	{
+		/// Find the relative array position of each camera to the center camera. This will dictate the step in disparity
+		disparityStep[i] = Point2i{ i % arrayShape.width, i / arrayShape.height } -Point2i{ centerCamId % arrayShape.width, centerCamId / arrayShape.height };
+		std::cout << disparityStep[i] << std::endl;
+		/// Get the origin of each image
+		imagePointers[i] = images[i].ptr<PixType>(0);
+	}
+
+	/// Iterate over every pixel and every disparity
+	for (int y = area.tl().y; y < area.br().y; y++)
+	{
+		for (int x = area.tl().x; x < area.br().x; x++)
+		{
+			CostType* pixelOrigin = costOrigin + y * area.width * D + x * D;
+			for (int d = minD; d < maxD; d++)
+			{
+				std::array<PixType, 25> intensities{ 0 };
+				int averageIntensity = 0;
+				int validIntensities = 0;
+				/// Iterate over all cameras to find intensity values
+				for (int c = 0; c < camCount; c++)
+				{
+					Point2i position{ x + d * disparityStep[c].x, y + d* disparityStep[c].y };
+					if (position.x < 0 || position.y < 0 || position.x >= width || position.y >= height)
+						continue;
+					intensities[validIntensities] = imagePointers[c][position.y * width + position.x];
+					averageIntensity += intensities[c];
+					validIntensities++;
+				}
+				averageIntensity /= validIntensities;
+				CostType cost = 0;
+				for (int i = 0; i < validIntensities; i++)
+				{
+					cost += std::abs(intensities[i]-averageIntensity);
+				}
+				cost /= validIntensities;
+				pixelOrigin[d - minD] = cost;
+			}
+		}
+
+	}
+}
+
 
 class BufferSGBM
 {
@@ -158,14 +213,14 @@ private:
 	utils::BufferArea area;
 
 public:
-	BufferSGBM(size_t width1_, size_t height1_,
+	BufferSGBM(
 		size_t Da_,
 		size_t Dlra_,
 		size_t cn,
 		size_t width_,
 		size_t height_,
-		const StereoSGBMParams2& params)
-		: width(width_), height(height_), width1(width1_), height1(height1_),
+		const StereoArraySGMParams& params)
+		: width(width_), height(height_),
 		Da(Da_),
 		Dlra(Dlra_),
 		Cbuf(NULL),
@@ -178,15 +233,14 @@ public:
 		clipTab(NULL)
 	{
 		const size_t TAB_SIZE = 256 + TAB_OFS * 2;
-		costWidth = width1 * Da;
-		costHeight = height1 * Da;
+		costWidth = width * Da;
 		hsumRows = 3;
 		dirs = NR;
 		dirs2 = NR2;
 		// for each possible stereo match (img1(x,y) <=> img2(x-d,y))
 		// we keep pixel difference cost (C) and the summary cost over NR directions (S).
 		// we also keep all the partial costs for the previous line L_r(x,d) and also min_k L_r(x, k)
-		area.allocate(Cbuf, costWidth * height1, CV_SIMD_WIDTH); // summary cost over different (nDirs) directions
+		area.allocate(Cbuf, costWidth * height, CV_SIMD_WIDTH); // summary cost over different (nDirs) directions
 		area.allocate(Sbuf, costWidth * height, CV_SIMD_WIDTH);
 		area.allocate(disp2cost, width, CV_SIMD_WIDTH);
 		area.allocate(disp2ptr, width, CV_SIMD_WIDTH);
@@ -285,103 +339,6 @@ public:
 };
 
 
-static void calcPixelCostBT2MultiCam(Mat& img1, Mat& img2, Mat& img3,
-	int minD, int maxD, CostType* costOrigin, int rowStep, int colStep, int matchCount, PixType* buffer, const PixType* tab)
-{
-	#pragma region LoadParameters
-	int x, c, width = img1.cols, cn = img1.channels();
-	//int minX1 = std::max(maxD, 0), maxX1 = width - std::max(maxD, 0);
-	int minX1 = maxD, maxX1 = width - maxD;
-	int D = (int)alignSize(maxD - minD, v_int16::nlanes);
-	int width1 = maxX1 - minX1;	// Actual width to be iterated over in img1
-	int height = img1.rows;
-	#pragma endregion
-	costOrigin -= minD    +    maxD * colStep    +    maxD * rowStep;
-	for (int y = maxD; y < height-maxD; y++)
-	{
-		CostType* costY = costOrigin + y * rowStep;
-		//CostType* cost = costOrigin + y * rowStep;
-		const PixType* row1 = img1.ptr<PixType>(y), * row2 = img2.ptr<PixType>(y), * row3 = img3.ptr<PixType>(y);
-		PixType* prow1 = buffer + width * 4;
-		PixType* prow2 = prow1 + width * 2;
-		PixType* prow3 = prow2 + width * 2;
-		for (c = 0; c < 2; c++)
-		{
-			prow1[width * c] = prow1[width * c + width - 1] =
-				prow2[width * c] = prow2[width * c + width - 1] =
-				prow3[width * c] = prow3[width * c + width - 1] = tab[0];
-		}
-
-		int n = y > 0 ? -(int)img1.step : 0, s = y < img1.rows - 1 ? (int)img1.step : 0;
-
-		for (x = 0; x < width; x++)
-		{
-			prow1[x] = tab[(row1[x + 1] - row1[x - 1]) * 2 + row1[x + n + 1] - row1[x + n - 1] + row1[x + s + 1] - row1[x + s - 1]];
-			prow2[width - 1 - x] = tab[(row2[x + 1] - row2[x - 1]) * 2 + row2[x + n + 1] - row2[x + n - 1] + row2[x + s + 1] - row2[x + s - 1]];
-			prow3[width - 1 - x] = tab[(row3[x + 1] - row3[x - 1]) * 2 + row3[x + n + 1] - row3[x + n - 1] + row3[x + s + 1] - row3[x + s - 1]];
-
-			prow1[x + width] = row1[x];
-			prow2[width - 1 - x + width] = row2[x];
-			prow3[width - 1 - x + width] = row3[x];
-		}
-
-		//memset(cost, 0, width1 * D * sizeof(cost[0]));
-
-		for (c = 0; c < cn * 2; c++, prow1 += width, prow2 += width)
-		{
-			int diff_scale = c * 2;
-			for (x = 1; x < width-1; x++)
-			{
-				int v = prow2[x];
-				int vl = x > 0 ? (v + prow2[x - 1]) / 2 : v;
-				int vr = x < width - 1 ? (v + prow2[x + 1]) / 2 : v;
-				int v0 = std::min(vl, vr); v0 = std::min(v0, v);
-				int v1 = std::max(vl, vr); v1 = std::max(v1, v);
-				buffer[x] = (PixType)v0;
-				buffer[x + width] = (PixType)v1;
-
-				int v_2 = prow3[x];
-				int vl_2 = x > 0 ? (v_2 + prow3[x - 1]) / 2 : v_2;
-				int vr_2 = x < width - 1 ? (v_2 + prow3[x + 1]) / 2 : v_2;
-				int v0_2 = std::min(vl_2, vr_2); v0_2 = std::min(v0_2, v_2);
-				int v1_2 = std::max(vl_2, vr_2); v1_2 = std::max(v1_2, v_2);
-				buffer[x + 2 * width] = (PixType)v0_2;
-				buffer[x + 3 * width] = (PixType)v1_2;
-			}
-
-			for (x = minX1; x < maxX1; x++)
-			{
-				CostType* costYX = costY + x * colStep;
-				int u = prow1[x];
-				int ul = x > 0 ? (u + prow1[x - 1]) / 2 : u;
-				int ur = x < width - 1 ? (u + prow1[x + 1]) / 2 : u;
-				int u0 = std::min(ul, ur); u0 = std::min(u0, u);
-				int u1 = std::max(ul, ur); u1 = std::max(u1, u);
-
-				for (int d = minD; d < maxD; d++)
-				{
-					int v = prow2[width - x - 1 + d];
-					int v0 = buffer[width - x - 1 + d];
-					int v1 = buffer[width - x - 1 + d + width];
-					int c0 = std::max(0, u - v1); c0 = std::max(c0, v0 - u);
-					int c1 = std::max(0, v - u1); c1 = std::max(c1, u0 - v);
-
-					int v0_2 = buffer[width - x - 1 - d + width * 2];
-					int v1_2 = buffer[width - x - 1 - d + width * 3];
-					int v_2 = prow3[width - x - 1 + d];
-					int c0_2 = std::max(0, u - v1_2); c0_2 = std::max(c0_2, v0_2 - u);
-					int c1_2 = std::max(0, v_2 - u1); c1_2 = std::max(c1_2, u0 - v_2);
-
-					costYX[d] =
-						(CostType)(costYX[d] +
-						((min(c0, c1) + min(c0_2, c1_2))/matchCount >> diff_scale));
-				}
-			}
-		}
-	}
-}
-
-
 /*
 	computes disparity for "roi" in img1 w.r.t. img2 and write it to disp1buf.
 	that is, disp1buf(x, y)=d means that img1(x+roi.x, y+roi.y) ~ img2(x+roi.x-d, y+roi.y).
@@ -399,14 +356,14 @@ static void calcPixelCostBT2MultiCam(Mat& img1, Mat& img2, Mat& img3,
 	disp2cost also has the same size as img1 (or img2).
 	It contains the minimum current cost, used to find the best disparity, corresponding to the minimal cost.
 	*/
-static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point2i> disparityDirection,
-	Mat& disp1, const StereoSGBMParams2& params)
+static void computeDisparityArraySGM(std::vector<cv::Mat>& images, cv::Rect area, cv::Size arrayShape, int centerCamId,
+	Mat& disp1, const StereoArraySGMParams& params)
 {
 	const int DISP_SHIFT = StereoMatcher::DISP_SHIFT;
 	const int DISP_SCALE = (1 << DISP_SHIFT);
 	const CostType MAX_COST = SHRT_MAX;
 
-	#pragma region LoadParameters
+#pragma region LoadParameters
 	int minD = params.minDisparity;// Minimum disparity
 	int maxD = minD + params.numDisparities;// Maximum disparity
 	int uniquenessRatio = params.uniquenessRatio >= 0 ? params.uniquenessRatio : 10;
@@ -415,17 +372,17 @@ static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point
 	int width = disp1.cols, height = disp1.rows;
 	const int D = params.numDisparities; // Number of disparities
 	int Da = (int)alignSize(D, v_int16::nlanes);	// Aligned number of disparities
-	int minX1 = std::max(maxD, 0); /* Min pos to stay within disparity in im1 */
-	int maxX1 = width - std::max(maxD, 0); //std::min(minD, 0); /* Max pos to stay within disparity in im1 */
-	int minY1 = std::max(maxD, 0);
-	int maxY1 = height - std::max(maxD, 0); /* Max pos to stay within disparity in im1 */
+	int minX1 = 0; /* Min pos to stay within disparity in im1 */
+	int maxX1 = width; //std::min(minD, 0); /* Max pos to stay within disparity in im1 */
+	int minY1 = 0;
+	int maxY1 = height; /* Max pos to stay within disparity in im1 */
 	int width1 = maxX1 - minX1; // Width in im1 that can actually be used for disparity
 	int height1 = maxY1 - minY1;
 	std::cout << "D: " << D << ", Da: " << Da << std::endl;
 	int Dlra = Da + v_int16::nlanes;//Additional memory is necessary to store disparity values(MAX_COST) for d=-1 and d=D
 	int INVALID_DISP = minD - 1, INVALID_DISP_SCALED = INVALID_DISP * DISP_SCALE;
 	int npasses = 2;
-	#pragma endregion
+#pragma endregion
 
 	// Return false when iteration is not possible
 	if (minX1 >= maxX1)
@@ -434,55 +391,9 @@ static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point
 		return;
 	}
 	// Create a buffer memory to store all operation results
-	BufferSGBM mem(width1, height1, Da, Dlra, images[0].channels(), width, height, params);
+	BufferSGBM mem(Da, Dlra, images[0].channels(), width, height, params);
 	mem.initCBuf((CostType)P2); // add P2 to every C(x,y). it saves a few operations in the inner loops
 	mem.clearSBuf();
-
-	std::vector<Mat> hImages; std::vector<int> hDir;
-	std::vector<Mat> vImages; std::vector<int> vDir;
-
-	std::cout << disparityDirection << std::endl;
-	hImages.push_back(images[0]);
-	vImages.push_back(images[0].t());
-	for (size_t i = 0; i < disparityDirection.size(); i++)
-	{
-		if (disparityDirection[i].x != 0) {
-			hImages.push_back(images[i+1]);
-			hDir.push_back(disparityDirection[i].x);
-		}
-		else
-		{
-			vImages.push_back(images[i+1].t());
-			vDir.push_back(-disparityDirection[i].y);
-		}
-	}
-
-
-	CostType* C = mem.getCBuf(0);
-	int matchCount = images.size() - 1;
-	P1 *= matchCount;
-	P2 *= matchCount;
-	matchCount = 1;
-	int rowStep = Da * width1;
-	int colStep = Da;
-	if (hImages.size() == 3) 
-	{
-		calcPixelCostBT2MultiCam(hImages[0], hImages[1], hImages[2], minD, maxD, C, rowStep, colStep, matchCount, mem.tempBuf, mem.getClipTab());
-	}
-	else if (hImages.size() == 2)
-	{
-		calcPixelCostBT2(hImages[0], hImages[1], minD, maxD, C, rowStep, colStep, matchCount, hDir[0], mem.tempBuf, mem.getClipTab());
-	}
-	rowStep = Da;
-	colStep = Da * width1;
-	if (vImages.size() == 3)
-	{
-		calcPixelCostBT2MultiCam(vImages[0], vImages[2], vImages[1], minD, maxD, C, rowStep, colStep, matchCount, mem.tempBuf, mem.getClipTab());
-	}
-	else if (vImages.size() == 2)
-	{
-		calcPixelCostBT2(vImages[0], vImages[1], minD, maxD, C, rowStep, colStep, matchCount, vDir[0], mem.tempBuf, mem.getClipTab());
-	}
 
 	for (int pass = 1; pass <= npasses; pass++)
 	{
@@ -490,13 +401,13 @@ static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point
 
 		if (pass == 1)	// Forward pass
 		{
-			y1 = maxD; y2 = height-maxD; dy = 1;
-			x1 = 0; x2 = width1; dx = 1;
+			y1 = area.tl().y; y2 = area.br().y; dy = 1;
+			x1 = 0; x2 = width; dx = 1;
 
 		}
 		else			// Backwards pass
 		{
-			y1 = height - 1-maxD; y2 = -1+maxD; dy = -1;
+			y1 = height - 1; y2 = -1 + maxD; dy = -1;
 			x1 = width1 - 1; x2 = -1; dx = -1;
 		}
 
@@ -507,7 +418,7 @@ static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point
 		{
 			int x, d;
 			DispType* disp1ptr = disp1.ptr<DispType>(y);
-			CostType* const C = mem.getCBuf(y-maxD);
+			CostType* const C = mem.getCBuf(y - maxD);
 			CostType* const S = mem.getSBuf(y);
 
 			// compute C on the first pass, and reuse it on the second pass, if any.
@@ -731,23 +642,22 @@ static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point
 ////////////////////////////////////////////////////////////////////////////////////////////
 
 
-StereoSGBMImpl2::StereoSGBMImpl2(int _minDisparity, int _numDisparities,
+StereoArraySGBM::StereoArraySGBM(int _minDisparity, int _numDisparities,
 	int _P1, int _P2, int _disp12MaxDiff, int _preFilterCap,
 	int _uniquenessRatio, int _speckleWindowSize, int _speckleRange)
 	: params(_minDisparity, _numDisparities,
 		_P1, _P2, _disp12MaxDiff, _preFilterCap,
-		_uniquenessRatio, _speckleWindowSize, _speckleRange)
-{
-	// nothing
-}
+		_uniquenessRatio, _speckleWindowSize, _speckleRange){}
 
-void StereoSGBMImpl2::computeMultiCam(std::vector<Mat> images, std::vector<cv::Point2i> disparityDirection, OutputArray disparr)
+void StereoArraySGBM::compute(std::vector<cv::Mat>& images, cv::Rect area, cv::Size arrayShape, int centerCamId, cv::OutputArray disparr)
 {
 	CV_INSTRUMENT_REGION();
 	disparr.create(images[0].size(), CV_16S);
 	Mat disp = disparr.getMat();
+	CV_Assert((area & cv::Rect(0, 0, images[centerCamId].cols, images[centerCamId].rows)) == area); // Check if defined area is in image
+	CV_Assert(images.size() == arrayShape.area()); // Check if the right amount of images is present
 
-	computeDisparitySGBM2(images, disparityDirection, disp, params);
+	computeDisparityArraySGM(images, area, arrayShape, centerCamId, disp, params);
 
 	cv::medianBlur(disp, disp, 3);
 
@@ -756,213 +666,3 @@ void StereoSGBMImpl2::computeMultiCam(std::vector<Mat> images, std::vector<cv::P
 			StereoMatcher::DISP_SCALE * params.speckleRange, buffer);
 }
 
-typedef cv::Point_<short> Point2s;
-
-template <typename T>
-void filterSpecklesImpl(cv::Mat & img, int newVal, int maxSpeckleSize, int maxDiff, cv::Mat & _buf)
-{
-	using namespace cv;
-
-	int width = img.cols, height = img.rows, npixels = width * height;
-	size_t bufSize = npixels * (int)(sizeof(Point2s) + sizeof(int) + sizeof(uchar));
-	if (!_buf.isContinuous() || _buf.empty() || _buf.cols * _buf.rows * _buf.elemSize() < bufSize)
-		_buf.reserveBuffer(bufSize);
-
-	uchar* buf = _buf.ptr();
-	int i, j, dstep = (int)(img.step / sizeof(T));
-	int* labels = (int*)buf;
-	buf += npixels * sizeof(labels[0]);
-	Point2s* wbuf = (Point2s*)buf;
-	buf += npixels * sizeof(wbuf[0]);
-	uchar* rtype = (uchar*)buf;
-	int curlabel = 0;
-
-	// clear out label assignments
-	memset(labels, 0, npixels * sizeof(labels[0]));
-
-	for (i = 0; i < height; i++)
-	{
-		T* ds = img.ptr<T>(i);
-		int* ls = labels + width * i;
-
-		for (j = 0; j < width; j++)
-		{
-			if (ds[j] != newVal)   // not a bad disparity
-			{
-				if (ls[j])     // has a label, check for bad label
-				{
-					if (rtype[ls[j]]) // small region, zero out disparity
-						ds[j] = (T)newVal;
-				}
-				// no label, assign and propagate
-				else
-				{
-					Point2s* ws = wbuf; // initialize wavefront
-					Point2s p((short)j, (short)i);  // current pixel
-					curlabel++; // next label
-					int count = 0;  // current region size
-					ls[j] = curlabel;
-
-					// wavefront propagation
-					while (ws >= wbuf) // wavefront not empty
-					{
-						count++;
-						// put neighbors onto wavefront
-						T* dpp = &img.at<T>(p.y, p.x);
-						T dp = *dpp;
-						int* lpp = labels + width * p.y + p.x;
-
-						if (p.y < height - 1 && !lpp[+width] && dpp[+dstep] != newVal && std::abs(dp - dpp[+dstep]) <= maxDiff)
-						{
-							lpp[+width] = curlabel;
-							*ws++ = Point2s(p.x, p.y + 1);
-						}
-
-						if (p.y > 0 && !lpp[-width] && dpp[-dstep] != newVal && std::abs(dp - dpp[-dstep]) <= maxDiff)
-						{
-							lpp[-width] = curlabel;
-							*ws++ = Point2s(p.x, p.y - 1);
-						}
-
-						if (p.x < width - 1 && !lpp[+1] && dpp[+1] != newVal && std::abs(dp - dpp[+1]) <= maxDiff)
-						{
-							lpp[+1] = curlabel;
-							*ws++ = Point2s(p.x + 1, p.y);
-						}
-
-						if (p.x > 0 && !lpp[-1] && dpp[-1] != newVal && std::abs(dp - dpp[-1]) <= maxDiff)
-						{
-							lpp[-1] = curlabel;
-							*ws++ = Point2s(p.x - 1, p.y);
-						}
-
-						// pop most recent and propagate
-						// NB: could try least recent, maybe better convergence
-						p = *--ws;
-					}
-
-					// assign label type
-					if (count <= maxSpeckleSize)   // speckle region
-					{
-						rtype[ls[j]] = 1;   // small region label
-						ds[j] = (T)newVal;
-					}
-					else
-						rtype[ls[j]] = 0;   // large region label
-				}
-			}
-		}
-	}
-}
-
-
-void cv::filterSpeckles(InputOutputArray _img, double _newval, int maxSpeckleSize,
-	double _maxDiff, InputOutputArray __buf)
-{
-	CV_INSTRUMENT_REGION();
-
-	Mat img = _img.getMat();
-	int type = img.type();
-	Mat temp, & _buf = __buf.needed() ? __buf.getMatRef() : temp;
-	CV_Assert(type == CV_8UC1 || type == CV_16SC1);
-
-	int newVal = cvRound(_newval), maxDiff = cvRound(_maxDiff);
-
-	CV_IPP_RUN_FAST(ipp_filterSpeckles(img, maxSpeckleSize, newVal, maxDiff, _buf));
-
-	if (type == CV_8UC1)
-		filterSpecklesImpl<uchar>(img, newVal, maxSpeckleSize, maxDiff, _buf);
-	else
-		filterSpecklesImpl<short>(img, newVal, maxSpeckleSize, maxDiff, _buf);
-}
-
-void cv::validateDisparity(InputOutputArray _disp, InputArray _cost, int minDisparity,
-	int numberOfDisparities, int disp12MaxDiff)
-{
-	CV_INSTRUMENT_REGION();
-
-	Mat disp = _disp.getMat(), cost = _cost.getMat();
-	int cols = disp.cols, rows = disp.rows;
-	int minD = minDisparity, maxD = minDisparity + numberOfDisparities;
-	int x, minX1 = std::max(maxD, 0), maxX1 = cols + std::min(minD, 0);
-	AutoBuffer<int> _disp2buf(cols * 2);
-	int* disp2buf = _disp2buf.data();
-	int* disp2cost = disp2buf + cols;
-	const int DISP_SHIFT = 4, DISP_SCALE = 1 << DISP_SHIFT;
-	int INVALID_DISP = minD - 1, INVALID_DISP_SCALED = INVALID_DISP * DISP_SCALE;
-	int costType = cost.type();
-
-	disp12MaxDiff *= DISP_SCALE;
-
-	CV_Assert(numberOfDisparities > 0 && disp.type() == CV_16S &&
-		(costType == CV_16S || costType == CV_32S) &&
-		disp.size() == cost.size());
-
-	for (int y = 0; y < rows; y++)
-	{
-		short* dptr = disp.ptr<short>(y);
-
-		for (x = 0; x < cols; x++)
-		{
-			disp2buf[x] = INVALID_DISP_SCALED;
-			disp2cost[x] = INT_MAX;
-		}
-
-		if (costType == CV_16S)
-		{
-			const short* cptr = cost.ptr<short>(y);
-
-			for (x = minX1; x < maxX1; x++)
-			{
-				int d = dptr[x], c = cptr[x];
-
-				if (d == INVALID_DISP_SCALED)
-					continue;
-
-				int x2 = x - ((d + DISP_SCALE / 2) >> DISP_SHIFT);
-
-				if (disp2cost[x2] > c)
-				{
-					disp2cost[x2] = c;
-					disp2buf[x2] = d;
-				}
-			}
-		}
-		else
-		{
-			const int* cptr = cost.ptr<int>(y);
-
-			for (x = minX1; x < maxX1; x++)
-			{
-				int d = dptr[x], c = cptr[x];
-
-				if (d == INVALID_DISP_SCALED)
-					continue;
-
-				int x2 = x - ((d + DISP_SCALE / 2) >> DISP_SHIFT);
-
-				if (disp2cost[x2] > c)
-				{
-					disp2cost[x2] = c;
-					disp2buf[x2] = d;
-				}
-			}
-		}
-
-		for (x = minX1; x < maxX1; x++)
-		{
-			// we round the computed disparity both towards -inf and +inf and check
-			// if either of the corresponding disparities in disp2 is consistent.
-			// This is to give the computed disparity a chance to look valid if it is.
-			int d = dptr[x];
-			if (d == INVALID_DISP_SCALED)
-				continue;
-			int d0 = d >> DISP_SHIFT;
-			int d1 = (d + DISP_SCALE - 1) >> DISP_SHIFT;
-			int x0 = x - d0, x1 = x - d1;
-			if ((0 <= x0 && x0 < cols && disp2buf[x0] > INVALID_DISP_SCALED && std::abs(disp2buf[x0] - d) > disp12MaxDiff) &&
-				(0 <= x1 && x1 < cols && disp2buf[x1] > INVALID_DISP_SCALED && std::abs(disp2buf[x1] - d) > disp12MaxDiff))
-				dptr[x] = (short)INVALID_DISP_SCALED;
-		}
-	}
-}

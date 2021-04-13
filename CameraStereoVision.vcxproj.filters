@@ -42,6 +42,9 @@
     <ClCompile Include="..\..\..\..\..\opencv\sources\modules\core\src\buffer_area.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\stereoArraySGM.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\Camera.h">
@@ -63,6 +66,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\stereosgbmMultiCam.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\stereoArraySGM.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

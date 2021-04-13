@@ -170,6 +170,9 @@
     <ClCompile Include="src\functions.cpp" />
     <ClCompile Include="src\imageHandling.cpp" />
     <ClCompile Include="src\plotting.cpp" />
+    <ClCompile Include="src\stereoArraySGM.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="src\stereosgbmMultiCam.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
     </ClCompile>
@@ -183,6 +186,9 @@
     <ClInclude Include="include\functions.h" />
     <ClInclude Include="include\imageHandling.h" />
     <ClInclude Include="include\plotting.h" />
+    <ClInclude Include="include\stereoArraySGM.h">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
+    </ClInclude>
     <ClInclude Include="include\stereosgbmMultiCam.h" />
   </ItemGroup>
   <ItemGroup>

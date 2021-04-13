@@ -5,9 +5,9 @@
 #include <opencv2/calib3d/calib3d.hpp>
 
 
-struct StereoSGBMParams2
+struct StereoArraySGMParams
 {
-	StereoSGBMParams2(int _minDisparity, int _numDisparities,
+	StereoArraySGMParams(int _minDisparity, int _numDisparities,
 		int _P1, int _P2, int _disp12MaxDiff, int _preFilterCap,
 		int _uniquenessRatio, int _speckleWindowSize, int _speckleRange)
 	{
@@ -33,15 +33,14 @@ struct StereoSGBMParams2
 	int disp12MaxDiff;
 };
 
-class StereoSGBMImpl2
+class StereoArraySGBM
 {
 public:
-	StereoSGBMImpl2();
-	StereoSGBMImpl2(int _minDisparity, int _numDisparities,
+	StereoArraySGBM(int _minDisparity, int _numDisparities,
 		int _P1, int _P2, int _disp12MaxDiff, int _preFilterCap,
 		int _uniquenessRatio, int _speckleWindowSize, int _speckleRange);
 
-	void computeMultiCam(std::vector<cv::Mat> images, std::vector<cv::Point2i> disparityDirection, cv::OutputArray disparr);
+	void compute(std::vector<cv::Mat>& images, cv::Rect area, cv::Size arrayShape, int centerCamId, cv::OutputArray disparr);
 
 	int getMinDisparity() const { return params.minDisparity; }
 	void setMinDisparity(int minDisparity) { params.minDisparity = minDisparity; }
@@ -70,7 +69,7 @@ public:
 	int getP2() const { return params.P2; }
 	void setP2(int P2) { params.P2 = P2; }
 
-	StereoSGBMParams2 params;
+	StereoArraySGMParams params;
 	cv::Mat buffer;
 
 };

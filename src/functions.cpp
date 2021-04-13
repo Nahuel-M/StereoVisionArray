@@ -279,6 +279,7 @@ void getCameras(std::vector<Camera>& cameras, cv::Size resolution, double f, dou
 		for (int x = 0; x < 5; x++)
 		{
 			cameras.push_back(Camera(f, Point3d{ 0.1 - x * 0.05, 0.1 - y * 0.05, -0.75 }, pixelSize));	//VARIABLE
+			//cameras.push_back(Camera(f, Point3d{ -0.1 + x * 0.05, -0.1 + y * 0.05, -0.75 }, pixelSize)); // Renders
 		}
 	}
 }
@@ -610,7 +611,9 @@ double calculateAverageError(cv::Mat &image)
 {
 	std::string folder = "Images";
 	std::vector<std::string> files = getImagesPathsFromFolder(folder);
-	Mat mask = getFaceMask(image);
+	Mat centerFace = imread(files[12], IMREAD_GRAYSCALE);
+	Mat mask = getFaceMask(centerFace);
+	resize(mask, mask, image.size());
 	return cv::mean(image, mask)[0];
 }
 
@@ -795,7 +798,6 @@ void undistortImages(std::vector<cv::Mat>& images, cv::Mat& K, cv::Mat& D, bool 
 	for (int i = 0; i < images.size(); i++) {
 		if(verbose){ showImage("Before", images[i]); }
 		remap(images[i], images[i], map1, map2, INTER_LINEAR);
-		blur(images[i], images[i], Size{ 6, 6 });
 		if (verbose) { showImage("After", images[i]); }
 	}
 
@@ -822,25 +824,56 @@ void exportOBJfromDisparity(cv::Mat disparityImage, std::string fileName, Camera
 	outputFile.close();
 }
 
+float getAvgDiffWithAbsoluteReference(Mat disparity, bool verbose, std::string savePath)
+{
+	Mat ref = getIdealRef();
+	Mat refDisparity = depth2Disparity(ref, cameras[0], cameras[1]);
+	resize(disparity, disparity, refDisparity.size());
+	Mat difference;
+	subtract(disparity, refDisparity, difference, noArray(), disparity.type());
+	difference = abs(difference);
+	difference.convertTo(difference, 0);
+	if (verbose)
+		showImage("difference", difference, 5, true, 1);
+	if (savePath != "")
+	{
+		imwrite(savePath, difference*5);
+	}
+	return calculateAverageError(difference);
+
+}
+
 Mat getCrossSGM(int centerCam, StereoSGBMImpl2 sgbm, bool verbose) 
 {
 	std::vector<Mat> imageVector;
 	std::vector<Point2i> directions;
 	std::vector<std::array<int, 2>> pairs = getCameraPairs(cameras, CROSS, centerCam);
 	imageVector.push_back(images[pairs[0][0]]);
-	showImage("imgC", imageVector[0]);
+	//showImage("imgC", imageVector[0]);
 	Mat disparity;
+	//Mat sumDisparity{ imageVector[0].size(), CV_16SC1, Scalar{0} };
 	for (auto p : pairs)
 	{
+		//if (p != std::array<int, 2>{12, 13}) continue;
 		imageVector.push_back(images[p[1]]);
 		Point3d dir = (cameras[p[1]].pos3D - cameras[p[0]].pos3D);
 		directions.push_back(Point2i{ (dir.x > 0) - (dir.x < 0), (dir.y > 0) - (dir.y < 0) });
 		if (verbose) {
 			sgbm.computeMultiCam(std::vector<Mat>{images[pairs[0][0]], images[p[1]]}, std::vector<Point2i>{Point2i{ (dir.x > 0) - (dir.x < 0), (dir.y > 0) - (dir.y < 0) }}, disparity);
-			showImage("subdisparity cam: " + std::to_string(p[1]), disparity - 4300, 70, false);
+			//std::cout << getAvgDiffWithAbsoluteReference(disparity, true) << std::endl;
+			//sumDisparity += disparity / 4;
+			showImage("subdisparity cam: " + std::to_string(p[1]), disparity - 4800, 70, true);
+
 		}
 			
 	}
+	//return sumDisparity;
 	sgbm.computeMultiCam(imageVector, directions, disparity);
 	return disparity;
+}
+
+void blurImages(std::vector<cv::Mat>& images, int blurKernel)
+{
+	for(auto im : images)
+		blur(im, im, Size{ blurKernel, blurKernel });
 }
