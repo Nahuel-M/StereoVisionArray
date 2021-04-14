@@ -35,99 +35,7 @@ static inline void min_pos(const v_int16& val, const v_int16& pos, short& min_va
 
 static const int DEFAULT_RIGHT_BORDER = -1;
 
-/*
-	For each pixel row1[x], max(maxD, 0) <= minX <= x < maxX <= width - max(0, -minD),
-	and for each disparity minD<=d<maxD the function
-	computes the cost (cost[(x-minX)*(maxD - minD) + (d - minD)]), depending on the difference between
-	row1[x] and row2[x-d]. The subpixel algorithm from
-	"Depth Discontinuities by Pixel-to-Pixel Stereo" by Stan Birchfield and C. Tomasi
-	is used, hence the suffix BT.
-	the temporary buffer should contain width2*2 elements
-	*/
-static void calcPixelCostBT2(const Mat& img1, const Mat& img2,
-	int minD, int maxD, CostType* costOrigin, int rowStep, int colStep, int matchCount, int direction,
-	PixType* buffer, const PixType* tab)
-{
-#pragma region LoadParameters
-	int x, c, width = img1.cols, cn = img1.channels();
-	//int minX1 = std::max(maxD, 0), maxX1 = width - std::max(maxD, 0);
-	int minX1 = maxD, maxX1 = width - maxD;
-	int D = (int)alignSize(maxD - minD, v_int16::nlanes);
-	int width1 = maxX1 - minX1;	// Actual width to be iterated over in img1
-	int height = img1.rows;
-#pragma endregion
-	costOrigin -= minD + maxD * colStep + maxD * rowStep;
-	for (int y = maxD; y < height - maxD; y++)
-	{
-		CostType* costY = costOrigin + y * rowStep;
-		const PixType* row1 = img1.ptr<PixType>(y), * row2 = img2.ptr<PixType>(y);
-		PixType* prow1 = buffer + width * 2;
-		PixType* prow2 = prow1 + width * 2;
-
-		for (c = 0; c < cn * 2; c++)
-		{
-			prow1[width * c] = prow1[width * c + width - 1] =
-				prow2[width * c] = prow2[width * c + width - 1] = tab[0];
-		}
-
-		int n = y > 0 ? -(int)img1.step : 0, s = y < img1.rows - 1 ? (int)img1.step : 0;
-
-		for (x = 0; x < width; x++)
-		{
-			prow1[x] = tab[(row1[x + 1] - row1[x - 1]) * 2 + row1[x + n + 1] - row1[x + n - 1] + row1[x + s + 1] - row1[x + s - 1]];
-			prow2[width - 1 - x] = tab[(row2[x + 1] - row2[x - 1]) * 2 + row2[x + n + 1] - row2[x + n - 1] + row2[x + s + 1] - row2[x + s - 1]];
-
-			prow1[x + width] = row1[x];
-			prow2[width - 1 - x + width] = row2[x];
-		}
-
-		for (c = 0; c < 2; c++, prow1 += width, prow2 += width)
-		{
-			int diff_scale = c * 2;
-			// precompute
-			//   v0 = min(row2[x-1/2], row2[x], row2[x+1/2]) and
-			//   v1 = max(row2[x-1/2], row2[x], row2[x+1/2]) and
-			//   to process values from [minX2, maxX2) we should check memory location (width - 1 - maxX2, width - 1 - minX2]
-			//   so iterate through [width - maxX2, width - minX2)
-			for (x = 1; x < width - 1; x++)
-			{
-				int v = prow2[x];
-				int vl = x > 0 ? (v + prow2[x - 1]) / 2 : v;
-				int vr = x < width - 1 ? (v + prow2[x + 1]) / 2 : v;
-				int v0 = std::min(vl, vr); v0 = std::min(v0, v);
-				int v1 = std::max(vl, vr); v1 = std::max(v1, v);
-				buffer[x] = (PixType)v0;
-				buffer[x + width] = (PixType)v1;
-			}
-
-			for (x = minX1; x < maxX1; x++)
-			{
-				CostType* costYX = costY + x * colStep;
-				int u = prow1[x];
-				int ul = x > 0 ? (u + prow1[x - 1]) / 2 : u;
-				int ur = x < width - 1 ? (u + prow1[x + 1]) / 2 : u;
-				int u0 = std::min(ul, ur); u0 = std::min(u0, u);
-				int u1 = std::max(ul, ur); u1 = std::max(u1, u);
-
-				for (int d = minD; d < maxD; d++)
-				{
-					int directedD = d * direction;
-					int v = prow2[width - x - 1 + directedD];
-					int v0 = buffer[width - x - 1 + directedD];
-					int v1 = buffer[width - x - 1 + directedD + width];
-					int c0 = std::max(0, u - v1); c0 = std::max(c0, v0 - u);
-					int c1 = std::max(0, v - u1); c1 = std::max(c1, u0 - v);
-
-					costYX[d] =
-						(CostType)(costYX[d] +
-						(min(c0, c1) / matchCount >> diff_scale));
-				}
-			}
-		}
-	}
-}
-
-static void calcPixelwiseArrayCost(std::vector<cv::Mat>& images, cv::Rect area, cv::Size arrayShape, int centerCamId,
+static void calcPixelwiseArrayCost(std::vector<cv::Mat>& images, std::vector<cv::Mat>& surfsPars, cv::Rect area, cv::Size arrayShape, int centerCamId,
 	int minD, int maxD, CostType* costOrigin,
 	PixType* buffer, const PixType* tab)
 {
@@ -138,21 +46,24 @@ static void calcPixelwiseArrayCost(std::vector<cv::Mat>& images, cv::Rect area, 
 
 	std::array<Point2i, 25> disparityStep;
 	std::array<PixType*, 25> imagePointers;
+	std::array<float*, 25> surfNormPts;
 	for (int i = 0; i < camCount; i++)
 	{
 		/// Find the relative array position of each camera to the center camera. This will dictate the step in disparity
-		disparityStep[i] = Point2i{ i % arrayShape.width, i / arrayShape.height } -Point2i{ centerCamId % arrayShape.width, centerCamId / arrayShape.height };
+		disparityStep[i] = Point2i{ i % arrayShape.width, -i / arrayShape.height } -Point2i{ centerCamId % arrayShape.width, -centerCamId / arrayShape.height };
 		std::cout << disparityStep[i] << std::endl;
 		/// Get the origin of each image
 		imagePointers[i] = images[i].ptr<PixType>(0);
+		surfNormPts[i] = surfsPars[i].ptr<float>(0);
 	}
-
+	costOrigin = costOrigin - minD;
 	/// Iterate over every pixel and every disparity
 	for (int y = area.tl().y; y < area.br().y; y++)
 	{
+		CostType* rowOrigin = costOrigin + (y - area.tl().y) * area.width * D;
 		for (int x = area.tl().x; x < area.br().x; x++)
 		{
-			CostType* pixelOrigin = costOrigin + y * area.width * D + x * D;
+			CostType* pixelOrigin =  rowOrigin + (x-area.tl().x) * D;
 			for (int d = minD; d < maxD; d++)
 			{
 				std::array<PixType, 25> intensities{ 0 };
@@ -161,11 +72,13 @@ static void calcPixelwiseArrayCost(std::vector<cv::Mat>& images, cv::Rect area, 
 				/// Iterate over all cameras to find intensity values
 				for (int c = 0; c < camCount; c++)
 				{
-					Point2i position{ x + d * disparityStep[c].x, y + d* disparityStep[c].y };
+					Point2i position = Point2i{ x , y } + d * disparityStep[c];
 					if (position.x < 0 || position.y < 0 || position.x >= width || position.y >= height)
+					{
 						continue;
+					}
 					intensities[validIntensities] = imagePointers[c][position.y * width + position.x];
-					averageIntensity += intensities[c];
+					averageIntensity += intensities[validIntensities];
 					validIntensities++;
 				}
 				averageIntensity /= validIntensities;
@@ -175,7 +88,8 @@ static void calcPixelwiseArrayCost(std::vector<cv::Mat>& images, cv::Rect area, 
 					cost += std::abs(intensities[i]-averageIntensity);
 				}
 				cost /= validIntensities;
-				pixelOrigin[d - minD] = cost;
+				pixelOrigin[d] = cost;
+				//std::cout << averageIntensity << std::endl;
 			}
 		}
 
@@ -186,8 +100,6 @@ static void calcPixelwiseArrayCost(std::vector<cv::Mat>& images, cv::Rect area, 
 class BufferSGBM
 {
 private:
-	size_t width1;
-	size_t height1;
 	size_t Da;
 	size_t Dlra;
 	size_t costWidth;
@@ -270,7 +182,7 @@ public:
 	}
 	inline void initCBuf(CostType val) const
 	{
-		for (size_t i = 0; i < costWidth * height1; ++i)
+		for (size_t i = 0; i < costWidth * height; ++i)
 			Cbuf[i] = val;
 	}
 	inline void clearLr(const Range& range = Range::all()) const
@@ -291,7 +203,7 @@ public:
 	}
 	inline size_t calcLrCount() const
 	{
-		return width1 * dirs2 + 2 * dirs;
+		return width * dirs2 + 2 * dirs;
 	}
 	inline void swapLr()
 	{
@@ -356,7 +268,7 @@ public:
 	disp2cost also has the same size as img1 (or img2).
 	It contains the minimum current cost, used to find the best disparity, corresponding to the minimal cost.
 	*/
-static void computeDisparityArraySGM(std::vector<cv::Mat>& images, cv::Rect area, cv::Size arrayShape, int centerCamId,
+static void computeDisparityArraySGM(std::vector<cv::Mat>& images, std::vector<cv::Mat>& surfaceParallelity, cv::Rect area, cv::Size arrayShape, int centerCamId,
 	Mat& disp1, const StereoArraySGMParams& params)
 {
 	const int DISP_SHIFT = StereoMatcher::DISP_SHIFT;
@@ -369,16 +281,17 @@ static void computeDisparityArraySGM(std::vector<cv::Mat>& images, cv::Rect area
 	int uniquenessRatio = params.uniquenessRatio >= 0 ? params.uniquenessRatio : 10;
 	int disp12MaxDiff = params.disp12MaxDiff > 0 ? params.disp12MaxDiff : 1;
 	int P1 = params.P1, P2 = params.P2;
-	int width = disp1.cols, height = disp1.rows;
+
+	int width = area.width, height = area.height;
 	const int D = params.numDisparities; // Number of disparities
 	int Da = (int)alignSize(D, v_int16::nlanes);	// Aligned number of disparities
+	std::cout << "D: " << D << ", Da: " << Da << std::endl;
 	int minX1 = 0; /* Min pos to stay within disparity in im1 */
 	int maxX1 = width; //std::min(minD, 0); /* Max pos to stay within disparity in im1 */
 	int minY1 = 0;
 	int maxY1 = height; /* Max pos to stay within disparity in im1 */
 	int width1 = maxX1 - minX1; // Width in im1 that can actually be used for disparity
 	int height1 = maxY1 - minY1;
-	std::cout << "D: " << D << ", Da: " << Da << std::endl;
 	int Dlra = Da + v_int16::nlanes;//Additional memory is necessary to store disparity values(MAX_COST) for d=-1 and d=D
 	int INVALID_DISP = minD - 1, INVALID_DISP_SCALED = INVALID_DISP * DISP_SCALE;
 	int npasses = 2;
@@ -392,23 +305,26 @@ static void computeDisparityArraySGM(std::vector<cv::Mat>& images, cv::Rect area
 	}
 	// Create a buffer memory to store all operation results
 	BufferSGBM mem(Da, Dlra, images[0].channels(), width, height, params);
+	std::cout << "Buffer initialized" << std::endl;
 	mem.initCBuf((CostType)P2); // add P2 to every C(x,y). it saves a few operations in the inner loops
 	mem.clearSBuf();
-
+	CostType* const C = mem.getCBuf(0);
+	calcPixelwiseArrayCost(images, surfaceParallelity, area, arrayShape, centerCamId, minD, maxD, C, mem.tempBuf, mem.getClipTab());
+	std::cout << "Pixelwise cost calculated" << std::endl;
 	for (int pass = 1; pass <= npasses; pass++)
 	{
 		int x1, y1, x2, y2, dx, dy;
 
 		if (pass == 1)	// Forward pass
 		{
-			y1 = area.tl().y; y2 = area.br().y; dy = 1;
-			x1 = 0; x2 = width; dx = 1;
+			y1 = 0; y2 = area.height; dy = 1;
+			x1 = 0; x2 = area.width; dx = 1;
 
 		}
 		else			// Backwards pass
 		{
-			y1 = height - 1; y2 = -1 + maxD; dy = -1;
-			x1 = width1 - 1; x2 = -1; dx = -1;
+			y1 = area.height - 1; y2 =  -1; dy = -1;
+			x1 = area.width - 1; x2 = - 1; dx = -1;
 		}
 
 		uchar lrID = 0;
@@ -418,7 +334,7 @@ static void computeDisparityArraySGM(std::vector<cv::Mat>& images, cv::Rect area
 		{
 			int x, d;
 			DispType* disp1ptr = disp1.ptr<DispType>(y);
-			CostType* const C = mem.getCBuf(y - maxD);
+			CostType* const C = mem.getCBuf(y);
 			CostType* const S = mem.getSBuf(y);
 
 			// compute C on the first pass, and reuse it on the second pass, if any.
@@ -550,20 +466,20 @@ static void computeDisparityArraySGM(std::vector<cv::Mat>& images, cv::Rect area
 				v_int16 v_inv_dist = vx_setall_s16((DispType)INVALID_DISP_SCALED);
 				v_int16 v_max_cost = vx_setall_s16(MAX_COST);
 				#pragma region Set_disparity_maps_to INVALID_DISP SCALED
-				for (; x <= width - v_int16::nlanes; x += v_int16::nlanes)
+				for (; x <= area.width - v_int16::nlanes; x += v_int16::nlanes)
 				{
 					v_store(disp1ptr + x, v_inv_dist);
 					v_store(mem.disp2ptr + x, v_inv_dist);
 					v_store(mem.disp2cost + x, v_max_cost);
 				}
 
-				for (; x < width; x++)
+				for (; x < area.width; x++)
 				{
 					disp1ptr[x] = mem.disp2ptr[x] = (DispType)INVALID_DISP_SCALED;
 					mem.disp2cost[x] = MAX_COST;
 				}
 				#pragma endregion
-				for (x = width1 - 1; x >= 0; x--)
+				for (x = area.width - 1; x >= 0; x--)
 				{
 					CostType* Sp = S + x * Da;
 					CostType minS = MAX_COST;
@@ -614,10 +530,10 @@ static void computeDisparityArraySGM(std::vector<cv::Mat>& images, cv::Rect area
 					}
 					else
 						d *= DISP_SCALE;
-					disp1ptr[x + minX1] = (DispType)(d + minD * DISP_SCALE);
+					disp1ptr[x] = (DispType)(d + minD * DISP_SCALE);
 				}
 
-				for (x = minX1; x < maxX1; x++)
+				for (x = 0; x < area.width; x++)
 				{
 					// we round the computed disparity both towards -inf and +inf and check
 					// if either of the corresponding disparities in disp2 is consistent.
@@ -649,15 +565,17 @@ StereoArraySGBM::StereoArraySGBM(int _minDisparity, int _numDisparities,
 		_P1, _P2, _disp12MaxDiff, _preFilterCap,
 		_uniquenessRatio, _speckleWindowSize, _speckleRange){}
 
-void StereoArraySGBM::compute(std::vector<cv::Mat>& images, cv::Rect area, cv::Size arrayShape, int centerCamId, cv::OutputArray disparr)
+void StereoArraySGBM::compute(std::vector<cv::Mat>& images, std::vector<cv::Mat>& surfaceParallelity, cv::Rect area, cv::Size arrayShape, int centerCamId, cv::OutputArray disparr)
 {
 	CV_INSTRUMENT_REGION();
-	disparr.create(images[0].size(), CV_16S);
+	disparr.create(area.size(), CV_16S);
 	Mat disp = disparr.getMat();
 	CV_Assert((area & cv::Rect(0, 0, images[centerCamId].cols, images[centerCamId].rows)) == area); // Check if defined area is in image
 	CV_Assert(images.size() == arrayShape.area()); // Check if the right amount of images is present
+	CV_Assert(surfaceParallelity.size() == arrayShape.area()); // Check if the right amount of surfaceParallelity maps is present
 
-	computeDisparityArraySGM(images, area, arrayShape, centerCamId, disp, params);
+
+	computeDisparityArraySGM(images, surfaceParallelity, area, arrayShape, centerCamId, disp, params);
 
 	cv::medianBlur(disp, disp, 3);
 

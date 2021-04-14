@@ -1,15 +1,73 @@
 
 #include <iostream>
 
+#include <filesystem>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include "imageHandling.h"
 
+// natural compare by Christian Ammer
+bool compareNat(const std::string& a, const std::string& b)
+{
+	if (a.empty())
+		return true;
+	if (b.empty())
+		return false;
+	if (std::isdigit(a[0]) && !std::isdigit(b[0]))
+		return true;
+	if (!std::isdigit(a[0]) && std::isdigit(b[0]))
+		return false;
+	if (!std::isdigit(a[0]) && !std::isdigit(b[0]))
+	{
+		if (std::toupper(a[0]) == std::toupper(b[0]))
+			return compareNat(a.substr(1), b.substr(1));
+		return (std::toupper(a[0]) < std::toupper(b[0]));
+	}
+
+	// Both strings begin with digit --> parse both numbers
+	std::istringstream issa(a);
+	std::istringstream issb(b);
+	int ia, ib;
+	issa >> ia;
+	issb >> ib;
+	if (ia != ib)
+		return ia < ib;
+
+	// Numbers are the same --> remove numbers and recurse
+	std::string anew, bnew;
+	std::getline(issa, anew);
+	std::getline(issb, bnew);
+	return (compareNat(anew, bnew));
+}
+
+std::vector<std::string> getImagesPathsFromFolder(std::string folderPath)
+{
+	namespace fs = std::filesystem;
+	std::vector<std::string> filePaths;
+	for (auto& p : fs::directory_iterator(folderPath))
+	{
+		filePaths.push_back(p.path().u8string());
+		//std::cout << p.path().u8string() << std::endl;
+	}
+	std::sort(filePaths.begin(), filePaths.end(), compareNat);
+	return filePaths;
+}
+
+
 cv::Mat getIdealRef() {
 	cv::Mat R;
 	cv::FileStorage file;
-	file.open("idealRef.yml", cv::FileStorage::READ);
+	try
+	{
+		file.open("idealRef_0_84.yml", cv::FileStorage::READ);
+	}
+	catch (cv::Exception & e)
+	{
+		const char* err_msg = e.what();
+		std::cout << "exception caught: " << err_msg << std::endl;
+	}
 	file["R"] >> R;
+	cv::flip(R, R, 0);
 	return R;
 }
 

@@ -440,7 +440,7 @@ std::vector< std::vector<std::array<int, 2>> > getGroups(std::vector<Camera> &ca
 	std::vector< std::vector<std::array<int, 2>> > groups;
 	if (groupType == "CHESS") {
 		for (int i = 0; i < 25; i += 2) {
-			groups.push_back(getCameraPairs(cameras, CROSS, i));
+			groups.push_back(getCameraPairs(cameras, pairType::CROSS, i));
 		}
 	}
 	return groups;
@@ -478,13 +478,13 @@ std::vector<Point3d> DepthMapToPoints3D(cv::Mat& depthMap, Camera camera, cv::Si
 
 std::vector<std::array<int, 2>> getCameraPairs(const std::vector<Camera>& cameras, const pairType pair) {
 	std::vector<std::array<int, 2>> pairs;
-	if (pair == TO_CENTER) {
+	if (pair == pairType::TO_CENTER) {
 		for (int i = 0; i < cameras.size(); i++) {
 			if (i == 12) continue;
 			pairs.push_back({ 12, i });
 		}
 	}
-	else if (pair == TO_CENTER_SMALL) {
+	else if (pair == pairType::TO_CENTER_SMALL) {
 			pairs.push_back({ 12, 6 });
 			pairs.push_back({ 12, 7 });
 			pairs.push_back({ 12, 8 });
@@ -494,43 +494,43 @@ std::vector<std::array<int, 2>> getCameraPairs(const std::vector<Camera>& camera
 			pairs.push_back({ 12, 17 });
 			pairs.push_back({ 12, 18 });
 	}
-	else if (pair == MID_LEFT) {
+	else if (pair == pairType::MID_LEFT) {
 		pairs.push_back({ 12, 11 });
 	}
-	else if (pair == MID_RIGHT) {
+	else if (pair == pairType::MID_RIGHT) {
 		pairs.push_back({ 12, 13 });
 	}
-	else if (pair == LEFT_LEFTER) {
+	else if (pair == pairType::LEFT_LEFTER) {
 		pairs.push_back({ 11, 10 });
 	}
-	else if (pair == RIGHT_RIGHTER) {
+	else if (pair == pairType::RIGHT_RIGHTER) {
 		pairs.push_back({ 14, 13 });
 	}
-	else if (pair == MID_TOP) {
+	else if (pair == pairType::MID_TOP) {
 		pairs.push_back({ 12, 7 });
 	}
-	else if (pair == MID_BOTTOM) {
+	else if (pair == pairType::MID_BOTTOM) {
 		pairs.push_back({ 12, 17 });
 	}
-	else if (pair == LINE_HORIZONTAL) {
+	else if (pair == pairType::LINE_HORIZONTAL) {
 		for (int i = 10; i < 15; i++) {
 			if (i == 12) continue;
 			pairs.push_back({ 12, i });
 		}
 	}
-	else if (pair == LINE_VERTICAL) {
+	else if (pair == pairType::LINE_VERTICAL) {
 		for (int i = 2; i < 25; i+=5) {
 			if (i == 12) continue;
 			pairs.push_back({ 12, i });
 		}
 	}
-	else if (pair == CROSS) {
+	else if (pair == pairType::CROSS) {
 			pairs.push_back({ 12, 11 });
 			pairs.push_back({ 12, 13 });
 			pairs.push_back({ 12, 7 });
 			pairs.push_back({ 12, 17 });
 	}
-	else if (pair == JUMP_CROSS) {
+	else if (pair == pairType::JUMP_CROSS) {
 		pairs.push_back({ 12, 10 });
 		pairs.push_back({ 12, 14 });
 		pairs.push_back({ 12, 2 });
@@ -541,7 +541,7 @@ std::vector<std::array<int, 2>> getCameraPairs(const std::vector<Camera>& camera
 
 std::vector<std::array<int, 2>> getCameraPairs(const std::vector<Camera>& cameras, const pairType pair, const int cameraNum) {
 	std::vector<std::array<int, 2>> pairs;
-	if (pair == CROSS) {
+	if (pair == pairType::CROSS) {
 		if(cameraNum-5>0)
 			pairs.push_back({ cameraNum, cameraNum - 5 });
 		if(cameraNum+5<25)
@@ -560,53 +560,6 @@ int getAbsDiff(cv::Mat& mat1, cv::Mat& mat2)
 	return (int)sum(abs(mat1-mat2))[0];
 }
 
-// natural compare by Christian Ammer
-bool compareNat(const std::string& a, const std::string& b)
-{
-	if (a.empty())
-		return true;
-	if (b.empty())
-		return false;
-	if (std::isdigit(a[0]) && !std::isdigit(b[0]))
-		return true;
-	if (!std::isdigit(a[0]) && std::isdigit(b[0]))
-		return false;
-	if (!std::isdigit(a[0]) && !std::isdigit(b[0]))
-	{
-		if (std::toupper(a[0]) == std::toupper(b[0]))
-			return compareNat(a.substr(1), b.substr(1));
-		return (std::toupper(a[0]) < std::toupper(b[0]));
-	}
-
-	// Both strings begin with digit --> parse both numbers
-	std::istringstream issa(a);
-	std::istringstream issb(b);
-	int ia, ib;
-	issa >> ia;
-	issb >> ib;
-	if (ia != ib)
-		return ia < ib;
-
-	// Numbers are the same --> remove numbers and recurse
-	std::string anew, bnew;
-	std::getline(issa, anew);
-	std::getline(issb, bnew);
-	return (compareNat(anew, bnew));
-}
-
-std::vector<std::string> getImagesPathsFromFolder(std::string folderPath)
-{
-	namespace fs = std::filesystem;
-	std::vector<std::string> filePaths;
-	for (auto& p : fs::directory_iterator(folderPath))
-	{
-		filePaths.push_back(p.path().u8string());
-		//std::cout << p.path().u8string() << std::endl;
-	}
-	std::sort(filePaths.begin(), filePaths.end(), compareNat);
-	return filePaths;
-}
-
 double calculateAverageError(cv::Mat &image)
 {
 	std::string folder = "Images";
@@ -621,29 +574,25 @@ cv::Mat depth2Normals(cv::Mat& depth, Mat& mask, Camera cam)
 {
 	Mat averagedDepth;
 	averagedDepth = blurWithMask(depth, mask, 79);
-	//showImage("Depth", depth);
-	//showImage("Mask", mask);
-
+	//showImage("averagedDepth", averagedDepth-0.7, 3);
 	double orthogonalDiff = cam.pixelSize / cam.f * 2;
-
 	cv::Mat normals(depth.size(), CV_32FC3);
 
 	for (int x = 3; x < depth.rows-3; ++x)
 	{
 		for (int y = 3; y < depth.cols-3; ++y)
 		{
-			if (mask.at<uchar>(x, y) == 0) continue;
+			if (mask.at<uchar>(x - 1, y) == 0 || mask.at<uchar>(x +1, y) == 0 || mask.at<uchar>(x, y - 1) == 0 || mask.at<uchar>(x, y + 1) == 0) 
+				continue; // If we are at the edges of the mask, skip pixel
 			float dzdy = ((float)averagedDepth.at<double>(x + 1, y) - (float)averagedDepth.at<double>(x - 1, y));
 			float dzdx = ((float)averagedDepth.at<double>(x, y + 1) - (float)averagedDepth.at<double>(x, y - 1));
 
 			Vec3f d(-dzdx, -dzdy, float(orthogonalDiff * averagedDepth.at<double>(x, y)));
 			Vec3f n = normalize(d);
-
 			normals.at<Vec3f>(x, y) = n;
 		}
 	}
-
-	//showImage("normals", abs(normals));
+	//showImage("Normals", normals);
 	return normals;
 }
 
@@ -676,35 +625,31 @@ cv::Mat disparity2Normals(cv::Mat& disparity, Mat& mask, Camera cam)
 	return normals;
 }
 
-cv::Mat getOrthogonalityFromCamera(cv::Mat& disparity, cv::Mat& mask, Camera perspective, Camera stereo, Camera orthogonality)
+cv::Mat getOrthogonalityFromCamera(cv::Mat& depth, cv::Mat& mask, cv::Mat& normals, Camera perspective, Camera orthogonality)
 {
-	Mat depth = disparity2Depth(disparity, perspective, stereo);
-	showImage("depth", depth*4-2);
-	Mat normals = depth2Normals(depth, mask, perspective);
-	showImage("normals", normals);
-	Vec3f camDiff3D = (Vec3f)(Vec3d)perspective.pos3D - (Vec3f)(Vec3d)orthogonality.pos3D; //INEFFICIENT
-	Mat camAngle{disparity.size(), CV_32FC3};
+	Vec3f camDiff3D = (Vec3f)(Vec3d)perspective.pos3D - (Vec3f)(Vec3d)orthogonality.pos3D;
+	Mat camAngle{ depth.size(), CV_32FC3, Scalar{0,0,0} };
 	double preMult = perspective.pixelSize / perspective.f;
 
-	for (int u = 0; u < disparity.cols; u++) {
-		for (int v = 0; v < disparity.rows; v++) {
-			if (disparity.at<ushort>(v, u) == 0) continue;
+	for (int u = 0; u < depth.cols; u++) {
+		for (int v = 0; v < depth.rows; v++) {
+			if (mask.at<uchar>(v, u) == 0) {
+				continue;
+			}
 			double d = depth.at<double>(v, u);
 			Vec3f pos3D(
-				(u - (disparity.cols / 2)) * d * preMult,
-				(v - (disparity.rows / 2)) * d * preMult,
+				(u - (depth.cols / 2)) * d * preMult,
+				(v - (depth.rows / 2)) * d * preMult,
 				d
 			);
-
 			pos3D = pos3D + camDiff3D;
 			camAngle.at<Vec3f>(v, u) = normalize(pos3D);
 		}
 	}
 	//showImage("camAngle", abs(camAngle));
-	//showImage("Normals", normals);
+	//showImage("Normals", (normals+1)/2);
 
 	Mat normalOrthogonality = matrixDot(camAngle, normals);
-	//showImage("normalOrthogonality", normalOrthogonality);
 	return normalOrthogonality;
 }
 
@@ -735,7 +680,6 @@ cv::Mat matrixDot(cv::Mat& mat1, cv::Mat& mat2)
 
 	for (int u = 0; u < mat1.cols; u++) {
 		for (int v = 0; v < mat1.rows; v++) {
-			//std::cout << mat1.at<Vec3f>(v, u).dot(mat2.at<Vec3f>(v, u)) << std::endl;
 			dotted.at<float>(v, u) = mat1.at<Vec3f>(v, u).dot(mat2.at<Vec3f>(v, u));
 		}
 	}
@@ -743,15 +687,19 @@ cv::Mat matrixDot(cv::Mat& mat1, cv::Mat& mat2)
 	return dotted;
 }
 
-cv::Mat blurWithMask(cv::Mat& image, cv::Mat& mask, int filterSize)
+cv::Mat blurWithMask(const cv::Mat& image, const cv::Mat& mask, int filterSize)
 {
-	Mat blurMask;
+	Mat maskedImage;
+	image.copyTo(maskedImage, mask);
+
 	Mat floatMask;
 	mask.convertTo(floatMask, CV_32F);
+
+	Mat blurMask;
 	GaussianBlur(floatMask, blurMask, Size(filterSize, filterSize), 0, 0);
 
 	Mat blurredImage;
-	GaussianBlur(image, blurredImage, Size(filterSize, filterSize), 0, 0);
+	GaussianBlur(maskedImage, blurredImage, Size(filterSize, filterSize), 0, 0);
 
 	Mat weightedBlur;
 	divide(blurredImage, blurMask, weightedBlur, 256, image.type());
@@ -762,17 +710,17 @@ cv::Mat blurWithMask(cv::Mat& image, cv::Mat& mask, int filterSize)
 	return maskedBlur;
 }
 
-cv::Mat getBlurredSlope(cv::Mat image, int vertical, int blurKernelSize)
+cv::Mat getBlurredSlope(cv::Mat image, bool vertical, int blurKernelSize)
 {
 	char kdata[] = { -1, 0, 1 };
 	Mat kernel;
-	if (vertical == 0) 
+	if (vertical) 
 	{
-		kernel = Mat(1, 3, CV_8S, kdata);
+		kernel = Mat(3, 1, CV_8S, kdata);
 	}
 	else
 	{
-		kernel = Mat(3, 1, CV_8S, kdata);
+		kernel = Mat(1, 3, CV_8S, kdata);
 	}
 	Mat delta;
 	filter2D(image, delta, CV_32F, kernel);
@@ -847,7 +795,7 @@ Mat getCrossSGM(int centerCam, StereoSGBMImpl2 sgbm, bool verbose)
 {
 	std::vector<Mat> imageVector;
 	std::vector<Point2i> directions;
-	std::vector<std::array<int, 2>> pairs = getCameraPairs(cameras, CROSS, centerCam);
+	std::vector<std::array<int, 2>> pairs = getCameraPairs(cameras, pairType::CROSS, centerCam);
 	imageVector.push_back(images[pairs[0][0]]);
 	//showImage("imgC", imageVector[0]);
 	Mat disparity;

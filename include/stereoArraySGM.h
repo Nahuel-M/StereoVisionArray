@@ -40,7 +40,7 @@ public:
 		int _P1, int _P2, int _disp12MaxDiff, int _preFilterCap,
 		int _uniquenessRatio, int _speckleWindowSize, int _speckleRange);
 
-	void compute(std::vector<cv::Mat>& images, cv::Rect area, cv::Size arrayShape, int centerCamId, cv::OutputArray disparr);
+	void compute(std::vector<cv::Mat>& images, std::vector<cv::Mat>& surfaceParallelity, cv::Rect area, cv::Size arrayShape, int centerCamId, cv::OutputArray disparr);
 
 	int getMinDisparity() const { return params.minDisparity; }
 	void setMinDisparity(int minDisparity) { params.minDisparity = minDisparity; }

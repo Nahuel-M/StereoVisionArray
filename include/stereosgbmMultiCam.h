@@ -36,7 +36,6 @@ struct StereoSGBMParams2
 class StereoSGBMImpl2
 {
 public:
-	StereoSGBMImpl2();
 	StereoSGBMImpl2(int _minDisparity, int _numDisparities,
 		int _P1, int _P2, int _disp12MaxDiff, int _preFilterCap,
 		int _uniquenessRatio, int _speckleWindowSize, int _speckleRange);

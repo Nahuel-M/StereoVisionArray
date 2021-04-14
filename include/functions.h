@@ -4,6 +4,7 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/features2d.hpp>
+#include "stereoArraySGM.h"
 #include "stereosgbmMultiCam.h"
 //#include <opencv2/calib3d.hpp>
 //#include "bresenham.h"
@@ -15,7 +16,7 @@ extern std::vector<Camera> cameras;
 extern cv::Mat mask;
 extern cv::Mat disparityRef;
 
-enum pairType {
+enum class pairType {
     ORTHOGONAL,
     DIAGONAL,
     TO_CENTER,
@@ -72,21 +73,19 @@ std::vector<std::array<int, 2>> getCameraPairs(const std::vector<Camera>& camera
 
 int getAbsDiff(cv::Mat& mat1, cv::Mat& mat2);
 
-std::vector<std::string> getImagesPathsFromFolder(std::string folderPath);
-
 double calculateAverageError(cv::Mat &image);
 
 cv::Mat depth2Normals(cv::Mat& depth, cv::Mat& mask, Camera cam);
 
-cv::Mat getOrthogonalityFromCamera(cv::Mat& disparity, cv::Mat& mask, Camera perspective, Camera stereo, Camera normals);
+cv::Mat getOrthogonalityFromCamera(cv::Mat& depth, cv::Mat& mask, cv::Mat& normals, Camera perspective, Camera orthogonality);
 
 cv::Mat getPixelNormals(Camera& camera, cv::Mat& image);
 
 cv::Mat matrixDot(cv::Mat& mat1, cv::Mat& mat2);
 
-cv::Mat blurWithMask(cv::Mat& image, cv::Mat& mask, int filterSize);
+cv::Mat blurWithMask(const cv::Mat& image, const cv::Mat& mask, int filterSize);
 
-cv::Mat getBlurredSlope(cv::Mat image, int vertical, int blurKernelSize = 41); //VARIABLE
+cv::Mat getBlurredSlope(cv::Mat image, bool vertical, int blurKernelSize = 41); //VARIABLE
 
 void getCameraIntrinsicParameters(std::string filePath, cv::Mat& K, cv::Mat& D);
 

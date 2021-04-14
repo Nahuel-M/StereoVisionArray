@@ -128,7 +128,7 @@ static void calcPixelCostBT2(const Mat& img1, const Mat& img2,
 }
 
 
-class BufferSGBM
+class Buffer5CamSGM
 {
 private:
 	size_t width1;
@@ -158,7 +158,7 @@ private:
 	utils::BufferArea area;
 
 public:
-	BufferSGBM(size_t width1_, size_t height1_,
+	Buffer5CamSGM(size_t width1_, size_t height1_,
 		size_t Da_,
 		size_t Dlra_,
 		size_t cn,
@@ -434,7 +434,7 @@ static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point
 		return;
 	}
 	// Create a buffer memory to store all operation results
-	BufferSGBM mem(width1, height1, Da, Dlra, images[0].channels(), width, height, params);
+	Buffer5CamSGM mem(width1, height1, Da, Dlra, images[0].channels(), width, height, params);
 	mem.initCBuf((CostType)P2); // add P2 to every C(x,y). it saves a few operations in the inner loops
 	mem.clearSBuf();
 
