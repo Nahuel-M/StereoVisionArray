@@ -48,14 +48,14 @@ static void calcPixelCostBT2(const Mat& img1, const Mat& img2,
 	int minD, int maxD, CostType* costOrigin, int rowStep, int colStep, int matchCount, int direction,
 	PixType* buffer, const PixType* tab)
 {
-	#pragma region LoadParameters
+#pragma region LoadParameters
 	int x, c, width = img1.cols, cn = img1.channels();
 	//int minX1 = std::max(maxD, 0), maxX1 = width - std::max(maxD, 0);
 	int minX1 = maxD, maxX1 = width - maxD;
 	int D = (int)alignSize(maxD - minD, v_int16::nlanes);
 	int width1 = maxX1 - minX1;	// Actual width to be iterated over in img1
 	int height = img1.rows;
-	#pragma endregion
+#pragma endregion
 	costOrigin -= minD + maxD * colStep + maxD * rowStep;
 	for (int y = maxD; y < height - maxD; y++)
 	{
@@ -74,8 +74,8 @@ static void calcPixelCostBT2(const Mat& img1, const Mat& img2,
 
 		for (x = 0; x < width; x++)
 		{
-			prow1[x] = tab[(row1[x + 1] - row1[x - 1]) * 2 + row1[x + n + 1] - row1[x + n - 1] + row1[x + s + 1] - row1[x + s - 1]];
-			prow2[width - 1 - x] = tab[(row2[x + 1] - row2[x - 1]) * 2 + row2[x + n + 1] - row2[x + n - 1] + row2[x + s + 1] - row2[x + s - 1]];
+			prow1[x] = tab[(row1[x + 1] - row1[x - 1]) * 2 - row1[x + n - 1] + row1[x + s + 1]];
+			prow2[width - 1 - x] = tab[(row2[x + 1] - row2[x - 1]) * 2 - row2[x + n - 1] + row2[x + s + 1]];
 
 			prow1[x + width] = row1[x];
 			prow2[width - 1 - x + width] = row2[x];
@@ -120,7 +120,7 @@ static void calcPixelCostBT2(const Mat& img1, const Mat& img2,
 
 					costYX[d] =
 						(CostType)(costYX[d] +
-						(min(c0, c1) / matchCount >> diff_scale));
+							(min(c0, c1) / matchCount >> diff_scale));
 				}
 			}
 		}
@@ -288,16 +288,16 @@ public:
 static void calcPixelCostBT2MultiCam(Mat& img1, Mat& img2, Mat& img3,
 	int minD, int maxD, CostType* costOrigin, int rowStep, int colStep, int matchCount, PixType* buffer, const PixType* tab)
 {
-	#pragma region LoadParameters
+#pragma region LoadParameters
 	int x, c, width = img1.cols, cn = img1.channels();
 	//int minX1 = std::max(maxD, 0), maxX1 = width - std::max(maxD, 0);
 	int minX1 = maxD, maxX1 = width - maxD;
 	int D = (int)alignSize(maxD - minD, v_int16::nlanes);
 	int width1 = maxX1 - minX1;	// Actual width to be iterated over in img1
 	int height = img1.rows;
-	#pragma endregion
-	costOrigin -= minD    +    maxD * colStep    +    maxD * rowStep;
-	for (int y = maxD; y < height-maxD; y++)
+#pragma endregion
+	costOrigin -= minD + maxD * colStep + maxD * rowStep;
+	for (int y = maxD; y < height - maxD; y++)
 	{
 		CostType* costY = costOrigin + y * rowStep;
 		//CostType* cost = costOrigin + y * rowStep;
@@ -316,9 +316,9 @@ static void calcPixelCostBT2MultiCam(Mat& img1, Mat& img2, Mat& img3,
 
 		for (x = 0; x < width; x++)
 		{
-			prow1[x] = tab[(row1[x + 1] - row1[x - 1]) * 2 + row1[x + n + 1] - row1[x + n - 1] + row1[x + s + 1] - row1[x + s - 1]];
-			prow2[width - 1 - x] = tab[(row2[x + 1] - row2[x - 1]) * 2 + row2[x + n + 1] - row2[x + n - 1] + row2[x + s + 1] - row2[x + s - 1]];
-			prow3[width - 1 - x] = tab[(row3[x + 1] - row3[x - 1]) * 2 + row3[x + n + 1] - row3[x + n - 1] + row3[x + s + 1] - row3[x + s - 1]];
+			prow1[x] = tab[(row1[x + 1] - row1[x - 1]) * 2 - row1[x + n - 1] + row1[x + s + 1]];
+			prow2[width - 1 - x] = tab[(row2[x + 1] - row2[x - 1]) * 2 - row2[x + n - 1] + row2[x + s + 1]];
+			prow3[width - 1 - x] = tab[(row3[x + 1] - row3[x - 1]) * 2 - row3[x + n - 1] + row3[x + s + 1]];
 
 			prow1[x + width] = row1[x];
 			prow2[width - 1 - x + width] = row2[x];
@@ -330,7 +330,7 @@ static void calcPixelCostBT2MultiCam(Mat& img1, Mat& img2, Mat& img3,
 		for (c = 0; c < cn * 2; c++, prow1 += width, prow2 += width)
 		{
 			int diff_scale = c * 2;
-			for (x = 1; x < width-1; x++)
+			for (x = 1; x < width - 1; x++)
 			{
 				int v = prow2[x];
 				int vl = x > 0 ? (v + prow2[x - 1]) / 2 : v;
@@ -374,7 +374,7 @@ static void calcPixelCostBT2MultiCam(Mat& img1, Mat& img2, Mat& img3,
 
 					costYX[d] =
 						(CostType)(costYX[d] +
-						((min(c0, c1) + min(c0_2, c1_2))/matchCount >> diff_scale));
+							((min(c0, c1) + min(c0_2, c1_2)) / matchCount >> diff_scale));
 				}
 			}
 		}
@@ -406,7 +406,7 @@ static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point
 	const int DISP_SCALE = (1 << DISP_SHIFT);
 	const CostType MAX_COST = SHRT_MAX;
 
-	#pragma region LoadParameters
+#pragma region LoadParameters
 	int minD = params.minDisparity;// Minimum disparity
 	int maxD = minD + params.numDisparities;// Maximum disparity
 	int uniquenessRatio = params.uniquenessRatio >= 0 ? params.uniquenessRatio : 10;
@@ -425,7 +425,7 @@ static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point
 	int Dlra = Da + v_int16::nlanes;//Additional memory is necessary to store disparity values(MAX_COST) for d=-1 and d=D
 	int INVALID_DISP = minD - 1, INVALID_DISP_SCALED = INVALID_DISP * DISP_SCALE;
 	int npasses = 2;
-	#pragma endregion
+#pragma endregion
 
 	// Return false when iteration is not possible
 	if (minX1 >= maxX1)
@@ -447,12 +447,12 @@ static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point
 	for (size_t i = 0; i < disparityDirection.size(); i++)
 	{
 		if (disparityDirection[i].x != 0) {
-			hImages.push_back(images[i+1]);
+			hImages.push_back(images[i + 1]);
 			hDir.push_back(disparityDirection[i].x);
 		}
 		else
 		{
-			vImages.push_back(images[i+1].t());
+			vImages.push_back(images[i + 1].t());
 			vDir.push_back(-disparityDirection[i].y);
 		}
 	}
@@ -465,7 +465,7 @@ static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point
 	matchCount = 1;
 	int rowStep = Da * width1;
 	int colStep = Da;
-	if (hImages.size() == 3) 
+	if (hImages.size() == 3)
 	{
 		calcPixelCostBT2MultiCam(hImages[0], hImages[1], hImages[2], minD, maxD, C, rowStep, colStep, matchCount, mem.tempBuf, mem.getClipTab());
 	}
@@ -490,13 +490,13 @@ static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point
 
 		if (pass == 1)	// Forward pass
 		{
-			y1 = maxD; y2 = height-maxD; dy = 1;
+			y1 = maxD; y2 = height - maxD; dy = 1;
 			x1 = 0; x2 = width1; dx = 1;
 
 		}
 		else			// Backwards pass
 		{
-			y1 = height - 1-maxD; y2 = -1+maxD; dy = -1;
+			y1 = height - 1 - maxD; y2 = -1 + maxD; dy = -1;
 			x1 = width1 - 1; x2 = -1; dx = -1;
 		}
 
@@ -507,7 +507,7 @@ static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point
 		{
 			int x, d;
 			DispType* disp1ptr = disp1.ptr<DispType>(y);
-			CostType* const C = mem.getCBuf(y-maxD);
+			CostType* const C = mem.getCBuf(y - maxD);
 			CostType* const S = mem.getSBuf(y);
 
 			// compute C on the first pass, and reuse it on the second pass, if any.
@@ -638,7 +638,7 @@ static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point
 
 				v_int16 v_inv_dist = vx_setall_s16((DispType)INVALID_DISP_SCALED);
 				v_int16 v_max_cost = vx_setall_s16(MAX_COST);
-				#pragma region Set_disparity_maps_to INVALID_DISP SCALED
+#pragma region Set_disparity_maps_to INVALID_DISP SCALED
 				for (; x <= width - v_int16::nlanes; x += v_int16::nlanes)
 				{
 					v_store(disp1ptr + x, v_inv_dist);
@@ -651,7 +651,7 @@ static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point
 					disp1ptr[x] = mem.disp2ptr[x] = (DispType)INVALID_DISP_SCALED;
 					mem.disp2cost[x] = MAX_COST;
 				}
-				#pragma endregion
+#pragma endregion
 				for (x = width1 - 1; x >= 0; x--)
 				{
 					CostType* Sp = S + x * Da;
@@ -754,215 +754,4 @@ void StereoSGBMImpl2::computeMultiCam(std::vector<Mat> images, std::vector<cv::P
 	if (params.speckleWindowSize > 0)
 		filterSpeckles(disp, (params.minDisparity - 1) * StereoMatcher::DISP_SCALE, params.speckleWindowSize,
 			StereoMatcher::DISP_SCALE * params.speckleRange, buffer);
-}
-
-typedef cv::Point_<short> Point2s;
-
-template <typename T>
-void filterSpecklesImpl(cv::Mat & img, int newVal, int maxSpeckleSize, int maxDiff, cv::Mat & _buf)
-{
-	using namespace cv;
-
-	int width = img.cols, height = img.rows, npixels = width * height;
-	size_t bufSize = npixels * (int)(sizeof(Point2s) + sizeof(int) + sizeof(uchar));
-	if (!_buf.isContinuous() || _buf.empty() || _buf.cols * _buf.rows * _buf.elemSize() < bufSize)
-		_buf.reserveBuffer(bufSize);
-
-	uchar* buf = _buf.ptr();
-	int i, j, dstep = (int)(img.step / sizeof(T));
-	int* labels = (int*)buf;
-	buf += npixels * sizeof(labels[0]);
-	Point2s* wbuf = (Point2s*)buf;
-	buf += npixels * sizeof(wbuf[0]);
-	uchar* rtype = (uchar*)buf;
-	int curlabel = 0;
-
-	// clear out label assignments
-	memset(labels, 0, npixels * sizeof(labels[0]));
-
-	for (i = 0; i < height; i++)
-	{
-		T* ds = img.ptr<T>(i);
-		int* ls = labels + width * i;
-
-		for (j = 0; j < width; j++)
-		{
-			if (ds[j] != newVal)   // not a bad disparity
-			{
-				if (ls[j])     // has a label, check for bad label
-				{
-					if (rtype[ls[j]]) // small region, zero out disparity
-						ds[j] = (T)newVal;
-				}
-				// no label, assign and propagate
-				else
-				{
-					Point2s* ws = wbuf; // initialize wavefront
-					Point2s p((short)j, (short)i);  // current pixel
-					curlabel++; // next label
-					int count = 0;  // current region size
-					ls[j] = curlabel;
-
-					// wavefront propagation
-					while (ws >= wbuf) // wavefront not empty
-					{
-						count++;
-						// put neighbors onto wavefront
-						T* dpp = &img.at<T>(p.y, p.x);
-						T dp = *dpp;
-						int* lpp = labels + width * p.y + p.x;
-
-						if (p.y < height - 1 && !lpp[+width] && dpp[+dstep] != newVal && std::abs(dp - dpp[+dstep]) <= maxDiff)
-						{
-							lpp[+width] = curlabel;
-							*ws++ = Point2s(p.x, p.y + 1);
-						}
-
-						if (p.y > 0 && !lpp[-width] && dpp[-dstep] != newVal && std::abs(dp - dpp[-dstep]) <= maxDiff)
-						{
-							lpp[-width] = curlabel;
-							*ws++ = Point2s(p.x, p.y - 1);
-						}
-
-						if (p.x < width - 1 && !lpp[+1] && dpp[+1] != newVal && std::abs(dp - dpp[+1]) <= maxDiff)
-						{
-							lpp[+1] = curlabel;
-							*ws++ = Point2s(p.x + 1, p.y);
-						}
-
-						if (p.x > 0 && !lpp[-1] && dpp[-1] != newVal && std::abs(dp - dpp[-1]) <= maxDiff)
-						{
-							lpp[-1] = curlabel;
-							*ws++ = Point2s(p.x - 1, p.y);
-						}
-
-						// pop most recent and propagate
-						// NB: could try least recent, maybe better convergence
-						p = *--ws;
-					}
-
-					// assign label type
-					if (count <= maxSpeckleSize)   // speckle region
-					{
-						rtype[ls[j]] = 1;   // small region label
-						ds[j] = (T)newVal;
-					}
-					else
-						rtype[ls[j]] = 0;   // large region label
-				}
-			}
-		}
-	}
-}
-
-
-void cv::filterSpeckles(InputOutputArray _img, double _newval, int maxSpeckleSize,
-	double _maxDiff, InputOutputArray __buf)
-{
-	CV_INSTRUMENT_REGION();
-
-	Mat img = _img.getMat();
-	int type = img.type();
-	Mat temp, & _buf = __buf.needed() ? __buf.getMatRef() : temp;
-	CV_Assert(type == CV_8UC1 || type == CV_16SC1);
-
-	int newVal = cvRound(_newval), maxDiff = cvRound(_maxDiff);
-
-	CV_IPP_RUN_FAST(ipp_filterSpeckles(img, maxSpeckleSize, newVal, maxDiff, _buf));
-
-	if (type == CV_8UC1)
-		filterSpecklesImpl<uchar>(img, newVal, maxSpeckleSize, maxDiff, _buf);
-	else
-		filterSpecklesImpl<short>(img, newVal, maxSpeckleSize, maxDiff, _buf);
-}
-
-void cv::validateDisparity(InputOutputArray _disp, InputArray _cost, int minDisparity,
-	int numberOfDisparities, int disp12MaxDiff)
-{
-	CV_INSTRUMENT_REGION();
-
-	Mat disp = _disp.getMat(), cost = _cost.getMat();
-	int cols = disp.cols, rows = disp.rows;
-	int minD = minDisparity, maxD = minDisparity + numberOfDisparities;
-	int x, minX1 = std::max(maxD, 0), maxX1 = cols + std::min(minD, 0);
-	AutoBuffer<int> _disp2buf(cols * 2);
-	int* disp2buf = _disp2buf.data();
-	int* disp2cost = disp2buf + cols;
-	const int DISP_SHIFT = 4, DISP_SCALE = 1 << DISP_SHIFT;
-	int INVALID_DISP = minD - 1, INVALID_DISP_SCALED = INVALID_DISP * DISP_SCALE;
-	int costType = cost.type();
-
-	disp12MaxDiff *= DISP_SCALE;
-
-	CV_Assert(numberOfDisparities > 0 && disp.type() == CV_16S &&
-		(costType == CV_16S || costType == CV_32S) &&
-		disp.size() == cost.size());
-
-	for (int y = 0; y < rows; y++)
-	{
-		short* dptr = disp.ptr<short>(y);
-
-		for (x = 0; x < cols; x++)
-		{
-			disp2buf[x] = INVALID_DISP_SCALED;
-			disp2cost[x] = INT_MAX;
-		}
-
-		if (costType == CV_16S)
-		{
-			const short* cptr = cost.ptr<short>(y);
-
-			for (x = minX1; x < maxX1; x++)
-			{
-				int d = dptr[x], c = cptr[x];
-
-				if (d == INVALID_DISP_SCALED)
-					continue;
-
-				int x2 = x - ((d + DISP_SCALE / 2) >> DISP_SHIFT);
-
-				if (disp2cost[x2] > c)
-				{
-					disp2cost[x2] = c;
-					disp2buf[x2] = d;
-				}
-			}
-		}
-		else
-		{
-			const int* cptr = cost.ptr<int>(y);
-
-			for (x = minX1; x < maxX1; x++)
-			{
-				int d = dptr[x], c = cptr[x];
-
-				if (d == INVALID_DISP_SCALED)
-					continue;
-
-				int x2 = x - ((d + DISP_SCALE / 2) >> DISP_SHIFT);
-
-				if (disp2cost[x2] > c)
-				{
-					disp2cost[x2] = c;
-					disp2buf[x2] = d;
-				}
-			}
-		}
-
-		for (x = minX1; x < maxX1; x++)
-		{
-			// we round the computed disparity both towards -inf and +inf and check
-			// if either of the corresponding disparities in disp2 is consistent.
-			// This is to give the computed disparity a chance to look valid if it is.
-			int d = dptr[x];
-			if (d == INVALID_DISP_SCALED)
-				continue;
-			int d0 = d >> DISP_SHIFT;
-			int d1 = (d + DISP_SCALE - 1) >> DISP_SHIFT;
-			int x0 = x - d0, x1 = x - d1;
-			if ((0 <= x0 && x0 < cols && disp2buf[x0] > INVALID_DISP_SCALED && std::abs(disp2buf[x0] - d) > disp12MaxDiff) &&
-				(0 <= x1 && x1 < cols && disp2buf[x1] > INVALID_DISP_SCALED && std::abs(disp2buf[x1] - d) > disp12MaxDiff))
-				dptr[x] = (short)INVALID_DISP_SCALED;
-		}
-	}
 }

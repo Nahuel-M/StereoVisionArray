@@ -46,7 +46,8 @@ std::vector<std::string> getImagesPathsFromFolder(std::string folderPath)
 	std::vector<std::string> filePaths;
 	for (auto& p : fs::directory_iterator(folderPath))
 	{
-		filePaths.push_back(p.path().u8string());
+		if(p.path().extension()==".jpg" || p.path().extension() == ".png")
+			filePaths.push_back(p.path().u8string());
 		//std::cout << p.path().u8string() << std::endl;
 	}
 	std::sort(filePaths.begin(), filePaths.end(), compareNat);
@@ -93,7 +94,7 @@ static void CallBackFuncs(int event, int x, int y, int flags, void* param)
 	cv::Mat& ptrImage = *((cv::Mat*)param);
 	if (event == cv::MouseEventTypes::EVENT_LBUTTONDOWN)
 	{
-		std::cout << "Type: " << ptrImage.type() << ", ";
+		std::cout << "Type: " << ptrImage.type() << " (" << cv::typeToString(ptrImage.type()) << "), ";
 		//std::cout << ptrImage.type() << std::endl;
 		if (ptrImage.type() == 0) {
 			std::cout << "at position (" << x << ", " << y << ")" << ": " << (int)ptrImage.at<unsigned char>(cv::Point(x, y)) << std::endl;
@@ -113,6 +114,10 @@ static void CallBackFuncs(int event, int x, int y, int flags, void* param)
 		else if (ptrImage.type() == 5)
 		{
 			std::cout << "at position (" << x << ", " << y << ")" << ": " << ptrImage.at<float>(cv::Point(x, y)) << std::endl;
+		}
+		else if (ptrImage.type() == 16)
+		{
+			std::cout << "Vec3UCHAR at position (" << x << ", " << y << ")" << ": " << ptrImage.at<cv::Vec<uchar, 3>>(cv::Point(x, y)) << std::endl;
 		}
 		else if (ptrImage.type() == 18)
 		{
@@ -136,13 +141,23 @@ static void CallBackFuncs(int event, int x, int y, int flags, void* param)
 }
 
 void showImage(std::string name, cv::Mat image, double multiplier, bool hold, float scale) {
-	cv::resize(image, image, cv::Size(), scale, scale);
+	if (scale > 1) {
+		cv::resize(image, image, cv::Size(), scale, scale, cv::INTER_NEAREST);
+	}
+	else if (scale < 1)
+	{
+		cv::resize(image, image, cv::Size(), scale, scale, cv::INTER_CUBIC);
+	}
 	cv::namedWindow(name, cv::WindowFlags::WINDOW_AUTOSIZE);
 	cv::imshow(name, image * multiplier);
 	if (hold)
 	{
 		cv::setMouseCallback(name, CallBackFuncs, &image);
 		cv::waitKey(0);
+	}
+	else 
+	{
+		cv::waitKey(1);
 	}
 }
 
@@ -157,9 +172,9 @@ void showDifference(std::string name, cv::Mat image1, cv::Mat image2, double mul
 	nDiff.setTo(0, nDiff < 0);
 
 	std::vector<cv::Mat> channels;
-	cv::Mat z =cv::Mat::zeros(cv::Size(nDiff.cols, nDiff.rows), nDiff.type());
+	//cv::Mat z =cv::Mat::zeros(cv::Size(nDiff.cols, nDiff.rows), nDiff.type());
 	channels.push_back(nDiff);
-	channels.push_back(z);
+	channels.push_back(pDiff);
 	channels.push_back(pDiff);
 
 	cv::Mat merged;

@@ -10,8 +10,10 @@
 //#include "bresenham.h"
 #include "imageHandling.h"
 #include "Camera.h"
+#include "plotting.h"
 
 extern std::vector<cv::Mat> images;
+extern std::vector<cv::Mat> faceNormals;
 extern std::vector<Camera> cameras;
 extern cv::Mat mask;
 extern cv::Mat disparityRef;
@@ -45,7 +47,7 @@ cv::Mat getDisparityFromPair2(std::vector<cv::Mat>& images, std::vector<Camera>&
 
 cv::Mat getDisparityFromPairSGM(std::array<int, 2> pair, int P1 = 4, int P2 = 24);
 
-void getCameras(std::vector<Camera>& cameras, cv::Size resolution, double f = 0.05, double sensorSize = 0.036, double pixelSize = 0);
+void getCameras(std::vector<Camera>& cameras, cv::Size resolution, std::string positionFilePath = "", double f = 0.05, double sensorSize = 0.036, double pixelSize = 0);
 
 void getImages(std::vector<cv::Mat>& images, std::string folderName, double scale = 1);
 
@@ -75,11 +77,13 @@ int getAbsDiff(cv::Mat& mat1, cv::Mat& mat2);
 
 double calculateAverageError(cv::Mat &image);
 
-cv::Mat depth2Normals(cv::Mat& depth, cv::Mat& mask, Camera cam);
+cv::Mat depth2Normals(const cv::Mat& depth, Camera cam);
 
-cv::Mat getOrthogonalityFromCamera(cv::Mat& depth, cv::Mat& mask, cv::Mat& normals, Camera perspective, Camera orthogonality);
+cv::Mat getOrthogonalityFromCamera(const cv::Mat& depth, cv::Mat& mask, cv::Mat& normals, Camera perspective, Camera orthogonality);
 
 cv::Mat getPixelNormals(Camera& camera, cv::Mat& image);
+
+cv::Mat getOcclusion(const cv::Mat& depth, const cv::Mat& camAngles, Camera perspective, Camera occlusionCaster);
 
 cv::Mat matrixDot(cv::Mat& mat1, cv::Mat& mat2);
 
@@ -95,6 +99,20 @@ void exportOBJfromDisparity(cv::Mat depthImage, std::string fileName, Camera cam
 
 cv::Mat getCrossSGM(int centerCam, StereoSGBMImpl2 sgbm, bool verbose = false);
 
-float getAvgDiffWithAbsoluteReference(cv::Mat disparity, bool verbose, std::string savePath = "");
+cv::Mat getDiffWithAbsoluteReference(cv::Mat disparity, cv::Rect area, bool verbose = false);
+
+float getAvgDiffWithAbsoluteReference(cv::Mat disparity, cv::Rect area, bool verbose = false, std::string savePath = "");
 
 void blurImages(std::vector<cv::Mat>& images, int blurKernel);
+
+void normalizeMats(std::vector<cv::Mat>& images);
+
+void subImgsAndCamsAndSurfs(std::vector<int> ids, std::vector<cv::Mat>& outputMats, std::vector<Camera>& outputCams, std::vector<cv::Mat>& outputSurfs);
+
+void subImgsAndCams(std::vector<int> ids, std::vector<cv::Mat>& outputMats, std::vector<Camera>& outputCams);
+
+cv::Mat getVectorMatsAverage(std::vector<cv::Mat>& mats);
+
+void makeArrayCollage(std::vector<cv::Mat> images, cv::Size arrayShape, float multiplier = 1, float scale = 1);
+
+void testSGM(cv::Mat disparity, std::vector<cv::Mat> images, std::vector<Camera> cameras, int minD, int numD, cv::Rect area);

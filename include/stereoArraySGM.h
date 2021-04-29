@@ -3,7 +3,23 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
+#include "Camera.h"
 
+template <typename printableVector>
+void printV(printableVector input);
+
+enum class costMetric {
+	Intensity, Derivative, StdDev
+};
+
+std::vector<float> calcDisparityCostForPlotting(std::vector<cv::Mat> images, std::vector<Camera> cameras, Camera centerCam, 
+	int x, int y, int minD, int maxD, costMetric metric);
+
+std::vector<float> calcPixelArrayCost(std::vector<cv::Mat>& images, std::vector<Camera> cams, Camera centerCam,
+	int minD, int maxD, cv::Point2i position, int camera = -1);
+
+std::vector<float> calcPixelArrayIntensity(cv::Mat& image, Camera cam, Camera centerCam,
+	int minD, int maxD, cv::Point2i position);
 
 struct StereoArraySGMParams
 {
@@ -40,7 +56,7 @@ public:
 		int _P1, int _P2, int _disp12MaxDiff, int _preFilterCap,
 		int _uniquenessRatio, int _speckleWindowSize, int _speckleRange);
 
-	void compute(std::vector<cv::Mat>& images, std::vector<cv::Mat>& surfaceParallelity, cv::Rect area, cv::Size arrayShape, int centerCamId, cv::OutputArray disparr);
+	void compute(std::vector<cv::Mat>& images, std::vector<cv::Mat>& surfaceParallelity, std::vector<Camera> cams, Camera centerCam, cv::Rect area, cv::OutputArray disparr, double camDistance = 0.05);
 
 	int getMinDisparity() const { return params.minDisparity; }
 	void setMinDisparity(int minDisparity) { params.minDisparity = minDisparity; }

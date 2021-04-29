@@ -6,6 +6,7 @@
 #include "functions.h"
 #include "Camera.h"
 #include "dlibFaceSelect.h"
+#include "bresenham.h"
 
 using namespace cv;
 
@@ -22,7 +23,7 @@ cv::Mat disparity2Depth(cv::Mat &disparity, Camera camera1, Camera camera2)
 {
 	Mat preMult;
 	double camDistance = norm(camera1.pos3D - camera2.pos3D);
-	multiply(disparity, camera1.pixelSize, preMult, 1, CV_64F);
+	cv::multiply(disparity, camera1.pixelSize, preMult, 1, CV_64F);
 	Mat depth = (camDistance * 16 * camera1.f / preMult);	//INEFFICIENT
 	depth.setTo(0, depth < -100000 | depth > 100000);
 	return depth;
@@ -265,7 +266,7 @@ cv::Mat getDisparityFromPairSGM(std::array<int,2> pair, int P1, int P2)
 	return disparity;
 }
 
-void getCameras(std::vector<Camera>& cameras, cv::Size resolution, double f, double sensorSize, double pixelSize)
+void getCameras(std::vector<Camera>& cameras, cv::Size resolution, std::string positionFilePath, double f, double sensorSize, double pixelSize)
 {
 	std::cout << "Image Resolution: " << resolution << std::endl;
 	if (pixelSize == 0) {
@@ -273,13 +274,25 @@ void getCameras(std::vector<Camera>& cameras, cv::Size resolution, double f, dou
 	}
 	std::cout << "Pixel Size: " << pixelSize << std::endl;
 
-
-	for (int y = 0; y < 5; y++)
-	{
-		for (int x = 0; x < 5; x++)
+	if (positionFilePath == "") {
+		for (int y = 0; y < 5; y++)
 		{
-			cameras.push_back(Camera(f, Point3d{ 0.1 - x * 0.05, 0.1 - y * 0.05, -0.75 }, pixelSize));	//VARIABLE
-			//cameras.push_back(Camera(f, Point3d{ -0.1 + x * 0.05, -0.1 + y * 0.05, -0.75 }, pixelSize)); // Renders
+			for (int x = 0; x < 5; x++)
+			{
+				cameras.push_back(Camera(f, Point3d{ 0.1 - x * 0.05, 0.1 - y * 0.05, -0.75 }, pixelSize));	//VARIABLE
+				//cameras.push_back(Camera(f, Point3d{ -0.1 + x * 0.05, -0.1 + y * 0.05, -0.75 }, pixelSize)); // Renders
+			}
+		}
+	}
+	else {
+		std::vector<Point3d> camPositions;
+		FileStorage camPosFile(positionFilePath + "\\cameraPosition.xyz", FileStorage::READ);
+		std::vector<Point3d> camPositions;
+		camPosFile["camera_positions"] >> camPositions;
+		camPosFile.release();
+		for (auto& camPos : camPositions)
+		{
+			cameras.push_back(Camera(f, camPos, pixelSize));
 		}
 	}
 }
@@ -451,7 +464,7 @@ cv::Mat Points3DToDepthMap(std::vector<Point3d>& points, Camera camera, cv::Size
 	Mat depthMap = Mat{ resolution, CV_64FC1 };
 	std::cout << depthMap.size() << std::endl;
 	Point2i halfRes = resolution / 2;
-	for (auto p : points) 
+	for (auto &p : points) 
 	{
 		Point2i pixel = camera.project(p) + halfRes;
 		if (pixel.x >= 0 && pixel.x < resolution.width && pixel.y >= 0 && pixel.y < resolution.height) {
@@ -570,26 +583,27 @@ double calculateAverageError(cv::Mat &image)
 	return cv::mean(image, mask)[0];
 }
 
-cv::Mat depth2Normals(cv::Mat& depth, Mat& mask, Camera cam)
+cv::Mat depth2Normals(const cv::Mat& depth, Camera cam)
 {
-	Mat averagedDepth;
-	averagedDepth = blurWithMask(depth, mask, 79);
-	//showImage("averagedDepth", averagedDepth-0.7, 3);
+	Mat depth32F;
+	depth.convertTo(depth32F, CV_32F);	
+	Mat blurredDepth;
+	bilateralFilter(depth32F, blurredDepth, 0, 4, 15);
+
+	GaussianBlur(blurredDepth, blurredDepth, Size{ 79,79 },0,0); // VARIABLE
 	double orthogonalDiff = cam.pixelSize / cam.f * 2;
 	cv::Mat normals(depth.size(), CV_32FC3);
 
-	for (int x = 3; x < depth.rows-3; ++x)
+	for (int y = 3; y < depth.rows-3; ++y)
 	{
-		for (int y = 3; y < depth.cols-3; ++y)
+		for (int x = 3; x < depth.cols-3; ++x)
 		{
-			if (mask.at<uchar>(x - 1, y) == 0 || mask.at<uchar>(x +1, y) == 0 || mask.at<uchar>(x, y - 1) == 0 || mask.at<uchar>(x, y + 1) == 0) 
-				continue; // If we are at the edges of the mask, skip pixel
-			float dzdy = ((float)averagedDepth.at<double>(x + 1, y) - (float)averagedDepth.at<double>(x - 1, y));
-			float dzdx = ((float)averagedDepth.at<double>(x, y + 1) - (float)averagedDepth.at<double>(x, y - 1));
+			float dzdx = blurredDepth.at<float>(y, x + 1) - blurredDepth.at<float>(y, x - 1);
+			float dzdy = blurredDepth.at<float>(y - 1, x) - blurredDepth.at<float>(y + 1, x);
 
-			Vec3f d(-dzdx, -dzdy, float(orthogonalDiff * averagedDepth.at<double>(x, y)));
+			Vec3f d(-dzdx, -dzdy, orthogonalDiff * blurredDepth.at<float>(y, x));
 			Vec3f n = normalize(d);
-			normals.at<Vec3f>(x, y) = n;
+			normals.at<Vec3f>(y, x) = n;
 		}
 	}
 	//showImage("Normals", normals);
@@ -625,31 +639,49 @@ cv::Mat disparity2Normals(cv::Mat& disparity, Mat& mask, Camera cam)
 	return normals;
 }
 
-cv::Mat getOrthogonalityFromCamera(cv::Mat& depth, cv::Mat& mask, cv::Mat& normals, Camera perspective, Camera orthogonality)
+cv::Mat getOrthogonalityFromCamera(const cv::Mat& depth, cv::Mat& mask, cv::Mat& normals, Camera perspective, Camera orthogonality)
 {
+	Mat blurredDepth = depth;
+	//blur(depth, blurredDepth, Size{ 3,3 });
 	Vec3f camDiff3D = (Vec3f)(Vec3d)perspective.pos3D - (Vec3f)(Vec3d)orthogonality.pos3D;
 	Mat camAngle{ depth.size(), CV_32FC3, Scalar{0,0,0} };
 	double preMult = perspective.pixelSize / perspective.f;
 
-	for (int u = 0; u < depth.cols; u++) {
-		for (int v = 0; v < depth.rows; v++) {
+	for (int v = 0; v < depth.rows; v++) {
+		for (int u = 0; u < depth.cols; u++) {
 			if (mask.at<uchar>(v, u) == 0) {
 				continue;
 			}
-			double d = depth.at<double>(v, u);
+			double d = blurredDepth.at<double>(v, u);
 			Vec3f pos3D(
 				(u - (depth.cols / 2)) * d * preMult,
-				(v - (depth.rows / 2)) * d * preMult,
+				-(v - (depth.rows / 2)) * d * preMult,
 				d
 			);
 			pos3D = pos3D + camDiff3D;
 			camAngle.at<Vec3f>(v, u) = normalize(pos3D);
 		}
 	}
-	//showImage("camAngle", abs(camAngle));
-	//showImage("Normals", (normals+1)/2);
+	//showImage("depth", depth);
+	//showImage("camAngle", camAngle);
+	//showImage("Normals", normals);
 
 	Mat normalOrthogonality = matrixDot(camAngle, normals);
+	//Mat occlusion = getOcclusion(blurredDepth, camAngle, perspective, orthogonality);
+	//saveImage("RenderOcclusions/C_" + std::to_string(orthogonality.pos3D.x) + "_" + std::to_string(orthogonality.pos3D.y), occlusion);
+	//Mat occlusion = loadImage("RenderOcclusions/C_" + std::to_string(orthogonality.pos3D.x) + "_" + std::to_string(orthogonality.pos3D.y));
+	//uchar data[] = { 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0 };
+	//Mat kernel{ Size{5,5}, CV_8U, data};
+	//showImage("occlusion", occlusion, 1, false);
+	//dilate(occlusion, occlusion, kernel);
+	//showImage("occlusion2", occlusion, 1, false);
+	//erode(occlusion, occlusion, kernel);
+	//erode(occlusion, occlusion, kernel);
+	//showImage("occlusion3", occlusion);
+	//multiply(normalOrthogonality, occlusion, normalOrthogonality, 1. / 255., normalOrthogonality.type());
+	cv::threshold(normalOrthogonality, normalOrthogonality, 0, FLT_MAX, cv::THRESH_TOZERO);
+	showImage("normalOrthogonality", normalOrthogonality, 1, false);
+	//showImage("occlusion", occlusion);
 	return normalOrthogonality;
 }
 
@@ -685,6 +717,79 @@ cv::Mat matrixDot(cv::Mat& mat1, cv::Mat& mat2)
 	}
 	//showImage("Dot", dotted);
 	return dotted;
+}
+
+void plot2Dpoints(cv::Mat& mat, std::vector<cv::Point2i>& points2D)
+{
+	Mat_<uchar> plot{ mat.size() };
+	for (auto &p : points2D) {
+		if (p.x - 10 < 0 || p.x + 10 > mat.cols || p.y - 10 < 0 || p.y + 10 > mat.rows) continue;
+		//std::cout << p << std::endl;
+		plot(Rect{ Point2i(p), Size{10,10} }) = 255;
+	}
+	cv::resize(plot, plot, cv::Size(), 0.25, 0.25);
+	cv::namedWindow("Plot", cv::WindowFlags::WINDOW_AUTOSIZE);
+	cv::imshow("Plot", plot);
+}
+
+cv::Mat getOcclusion(const cv::Mat& depth, const cv::Mat& camAngles, Camera perspective, Camera occlusionCaster)
+{
+	Mat occlusion{ depth.size(), CV_8U , Scalar{255} };
+	Point3d relPos = occlusionCaster.pos3D - perspective.pos3D;
+	float orthogonalDiff = perspective.pixelSize / perspective.f;
+	float invOrthDiff = 1 / orthogonalDiff;
+	int halfRows = depth.rows / 2, halfCols = depth.cols / 2;
+	for (int r = 0; r < depth.rows; r++)
+	{
+		for (int c = 0; c < depth.cols; c++)
+		{
+			double startDepth = depth.at<double>(r, c);
+			Vec3f angle = camAngles.at<Vec3f>(r, c);
+			double angle_times_orthogonalDiff = angle[2] * orthogonalDiff;
+			double angle_times_relPosX = angle[2] * relPos.x, angle_times_relPosY = angle[2] * relPos.y;
+			Point2i startPos2D{ c,r };
+			Point2f endPos2D = Point2f{ angle[0] / angle[2] * invOrthDiff,-angle[1] / angle[2] * invOrthDiff } + Point2f{ float(depth.cols) / 2.f, float(depth.rows) / 2.f };
+			Point2f delta2D = Point2f(startPos2D) - endPos2D;
+			std::vector<Point2i> points = bresenhamDxDy(startPos2D, delta2D, depth.size());
+			//std::cout << points.size() << std::endl;
+			//Mat plot{ depth.size(), CV_8U , Scalar{255} };
+			//plot2Dpoints(plot, points);
+			//waitKey(0);
+			double castDepth;
+			int count = 0;
+			for (Point2i p : points) {
+				if (count > 250) break;
+				if (relPos.x != 0 && relPos.y != 0)
+				{
+					castDepth =  -angle_times_relPosY / (angle[1] - angle_times_orthogonalDiff * -(p.y - halfRows));
+					castDepth += -angle_times_relPosX / (angle[0] - angle_times_orthogonalDiff * (p.x - halfCols));
+					castDepth /= 2;
+				}
+				else if (relPos.x != 0)
+				{
+					castDepth = -angle_times_relPosX / (angle[0] - angle_times_orthogonalDiff * (p.x - halfCols));
+				}
+				else
+				{
+					castDepth = -angle_times_relPosY / (angle[1] - angle_times_orthogonalDiff * -(p.y - halfRows));
+				}
+
+				if (castDepth < 0.7) break;
+				if (castDepth-1e-7 > depth.at<double>(p))
+				{
+					//std::cout << startPos2D << ",  " << p << ", " << angle << ", " << castDepth << ", " << ", " << depth.at<double>(p) << std::endl;
+					//std::cout << startPos2D << ",  " << p << ", " << castDepth << ", " << depth.at<double>(p) << std::endl;
+					occlusion.at<uchar>(r, c) = 0;
+					break;
+				}
+				count++;
+			}
+		}
+	}
+	//Mat showOff;
+	//cv::multiply(occlusion, depth, showOff, 1./255., depth.type());
+	//showImage("occlusion", showOff-0.6, 4);
+	return occlusion;
 }
 
 cv::Mat blurWithMask(const cv::Mat& image, const cv::Mat& mask, int filterSize)
@@ -747,6 +852,7 @@ void undistortImages(std::vector<cv::Mat>& images, cv::Mat& K, cv::Mat& D, bool 
 		if(verbose){ showImage("Before", images[i]); }
 		remap(images[i], images[i], map1, map2, INTER_LINEAR);
 		if (verbose) { showImage("After", images[i]); }
+		//imwrite("Photographs\\Series1WhiteBalancedUndistorted\\" + std::to_string(i) + ".jpg", images[i]);
 	}
 
 }
@@ -772,17 +878,28 @@ void exportOBJfromDisparity(cv::Mat disparityImage, std::string fileName, Camera
 	outputFile.close();
 }
 
-float getAvgDiffWithAbsoluteReference(Mat disparity, bool verbose, std::string savePath)
+cv::Mat getDiffWithAbsoluteReference(Mat disparity, Rect area, bool verbose)
 {
+	Mat disparityHolder{ images[0].size(), CV_16SC1 };
+	disparity.copyTo(disparityHolder(area));
 	Mat ref = getIdealRef();
 	Mat refDisparity = depth2Disparity(ref, cameras[0], cameras[1]);
-	resize(disparity, disparity, refDisparity.size());
+	resize(disparityHolder, disparityHolder, refDisparity.size());
+	disparityHolder = disparityHolder(Rect{ area.tl() * refDisparity.cols / images[0].cols, area.br() * refDisparity.cols / images[0].cols });
+	refDisparity = refDisparity((Rect{ area.tl() * refDisparity.cols / images[0].cols, area.br() * refDisparity.cols / images[0].cols }));
 	Mat difference;
-	subtract(disparity, refDisparity, difference, noArray(), disparity.type());
+	subtract(disparityHolder, refDisparity, difference, noArray(), disparity.type());
 	difference = abs(difference);
 	difference.convertTo(difference, 0);
 	if (verbose)
-		showImage("difference", difference, 5, true, 1);
+		showDifference("difference", disparityHolder, refDisparity, 800);
+	return difference;
+}
+
+float getAvgDiffWithAbsoluteReference(Mat disparity, Rect area, bool verbose, std::string savePath)
+{
+	Mat difference = getDiffWithAbsoluteReference(disparity, area, verbose);
+
 	if (savePath != "")
 	{
 		imwrite(savePath, difference*5);
@@ -800,7 +917,7 @@ Mat getCrossSGM(int centerCam, StereoSGBMImpl2 sgbm, bool verbose)
 	//showImage("imgC", imageVector[0]);
 	Mat disparity;
 	//Mat sumDisparity{ imageVector[0].size(), CV_16SC1, Scalar{0} };
-	for (auto p : pairs)
+	for (auto &p : pairs)
 	{
 		//if (p != std::array<int, 2>{12, 13}) continue;
 		imageVector.push_back(images[p[1]]);
@@ -824,4 +941,135 @@ void blurImages(std::vector<cv::Mat>& images, int blurKernel)
 {
 	for(auto im : images)
 		blur(im, im, Size{ blurKernel, blurKernel });
+}
+
+void normalizeMats(std::vector<cv::Mat>& images)
+{
+	Mat sumMat{ images[0].size(), images[0].type(), Scalar{0} };
+	for (int i = 0; i < images.size(); i++)
+	{
+		sumMat += images[i];
+	}
+	for (int i = 0; i < images.size(); i++)
+	{
+		images[i] /= sumMat;
+	}
+}
+
+void subImgsAndCamsAndSurfs(std::vector<int> ids, std::vector<Mat>& outputMats, std::vector<Camera>& outputCams, std::vector<cv::Mat>& outputSurfs)
+{
+	outputMats.clear();
+	outputCams.clear();
+	outputSurfs.clear();
+	for (auto i : ids) {
+		outputMats.push_back(images[i]);
+		outputCams.push_back(cameras[i]);
+		outputSurfs.push_back(faceNormals[i]);
+	}
+}
+
+void subImgsAndCams(std::vector<int> ids, std::vector<Mat>& outputMats, std::vector<Camera>& outputCams)
+{
+	outputMats.clear();
+	outputCams.clear();
+	for (auto i : ids) {
+		outputMats.push_back(images[i]);
+		outputCams.push_back(cameras[i]);
+	}
+}
+
+Mat getVectorMatsAverage(std::vector<cv::Mat>& mats)
+{
+	Mat sum = Mat{ mats[0].size(), mats[0].type(), Scalar{0} };
+	for (auto &m : mats)
+	{
+		sum += m;
+	}
+	sum /= mats.size();
+	return sum;
+}
+
+void makeArrayCollage(std::vector<cv::Mat> images, cv::Size arrayShape, float multiplier, float scale)
+{
+	Mat collage;
+	std::vector<Mat> hConcats(arrayShape.height);
+	for (int i = 0; i < arrayShape.height; i++)
+	{
+		std::vector<Mat> subVector;
+		for (int j = 0; j < arrayShape.width; j++)
+		{
+			subVector.push_back(images[i*arrayShape.height+j]);
+		}
+		cv::hconcat(subVector, hConcats[i]);
+	}
+	cv::vconcat(hConcats, collage);
+	showImage("Collage", collage, multiplier, false, scale);
+}
+
+std::vector<cv::Mat> testSGMimages;
+std::vector<Camera> testSGMcameras;
+int testSGMminD;
+int testSGMnumD;
+cv::Rect testSGMarea;
+
+namespace plt = matplotlibcpp;
+
+static void pixelSGM(int event, int x, int y, int flags, void* param)
+{
+	std::vector<Mat> images = *((std::vector<Mat>*)param);
+	x *= 2;
+	y *= 2;
+	if (event == cv::MouseEventTypes::EVENT_LBUTTONDOWN)
+	{
+		std::cout << x << ", " << y << std::endl;
+		plt::figure(0);
+		plt::clf();
+		for (int c = 0; c< testSGMcameras.size(); c++)
+		{
+			std::vector<cv::Mat> subImages2;
+			std::vector<Camera> subCameras2;
+			subImgsAndCams({ c }, subImages2, subCameras2);
+			std::vector<float> error = calcPixelArrayIntensity(testSGMimages[c], testSGMcameras[c],
+			testSGMcameras[(testSGMcameras.size()-1)/2], testSGMminD, testSGMminD + testSGMnumD, 
+			Point2i{ x+testSGMarea.x,y+testSGMarea.y });
+			plt::plot(error, { {"label", std::to_string(c)} });
+		}		
+		plt::legend();
+		waitKey(10);
+		plt::save("temp\\Intensities.jpg");
+		plt::figure(1);
+		plt::clf();
+		std::vector<float> error = calcDisparityCostForPlotting(testSGMimages, testSGMcameras,
+			testSGMcameras[(testSGMcameras.size() - 1) / 2],
+			x + testSGMarea.x, y + testSGMarea.y, testSGMminD, testSGMminD + testSGMnumD, costMetric::Intensity);
+		std::vector<float> diffError = calcDisparityCostForPlotting(testSGMimages, testSGMcameras,
+			testSGMcameras[(testSGMcameras.size() - 1) / 2], 
+			x + testSGMarea.x, y + testSGMarea.y, testSGMminD, testSGMminD + testSGMnumD, costMetric::Derivative);
+		plt::plot(error, { {"label", "error"} });
+		plt::plot(diffError, { {"label", "diffError"} });
+		plt::legend();
+		plt::save("temp\\Costs.jpg");
+		//plt::show();
+		Mat intImg = imread("temp\\Intensities.jpg");
+		Mat costImg = imread("temp\\Costs.jpg");
+		Mat concat;
+		vconcat(intImg, costImg, concat);
+		showImage("Intensities and costs", concat, 1, false, 0.85);
+	}
+}
+
+
+void testSGM(Mat disparity, std::vector<Mat> images, std::vector<Camera> cameras, int minD, int numD, Rect area)
+{
+	testSGMimages = images;
+	testSGMcameras = cameras;
+	testSGMminD = minD;
+	testSGMnumD = numD;
+	testSGMarea = area;
+	cv::namedWindow("Disparity Click", cv::WindowFlags::WINDOW_AUTOSIZE);
+	Mat resizedDisparity;
+	resize(disparity, resizedDisparity, Size{}, 0.5, 0.5);
+	cv::imshow("Disparity Click", (resizedDisparity));
+	cv::setMouseCallback("Disparity Click", pixelSGM, &images);
+	cv::waitKey(0);
 }
