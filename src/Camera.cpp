@@ -3,13 +3,14 @@
 
 using namespace cv;
 
-Camera::Camera(double focal_length, Point3d position, double pixel_size):
-	f{ focal_length }, pos3D{position}, pixelSize{ pixel_size }
-{
-}
+Camera::Camera(double focal_length, double _fx, double _fy, Point3d position, double pixel_size, Point2i principalPoint):
+	f{ focal_length }, fx{ _fx }, fy{ _fy }, pos3D{ position }, pixelSize{ pixel_size }, principalPoint{ principalPoint }
+{}
 
-Camera::Camera()
+Camera::Camera(double focal_length, Point3d position, double pixel_size) :
+	f{ focal_length }, pos3D{ position }, pixelSize{ pixel_size }
 {
+	principalPoint = Point2i{ -1,-1 };
 }
 
 Camera::~Camera()
@@ -29,10 +30,10 @@ Point2i Camera::project(Point3d Pos3D)
 Point3d Camera::inv_project(Point2i pixel)
 {
 	Point3d vector{
-		pixel.x * pixelSize / f,
-		pixel.y * pixelSize / f,
+		pixel.x * pixelSize / fx,
+		pixel.y * pixelSize / fy,
 		1
 	};
-	return vector; // norm(vector);
+	return vector;
 
 }

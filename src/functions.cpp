@@ -1,7 +1,9 @@
+#pragma warning (push, 0)	/// Disabling warnings for external libraries
 #include <fstream>
-
 #include <iostream>
 #include <filesystem>
+#include <thread>
+#pragma warning (pop)
 
 #include "functions.h"
 #include "Camera.h"
@@ -12,451 +14,118 @@ using namespace cv;
 
 cv::Mat depth2Disparity(cv::Mat& depth, Camera camera1, Camera camera2)
 {
-	double camDistance = norm(camera1.pos3D - camera2.pos3D);
+	double camDistance = 0.05; //VARIABLE
+	std::cout << camera1.f << std::endl;
 	double preMult = camDistance * camera1.f / camera1.pixelSize;
 	Mat result;
-	divide(preMult * 16, depth, result, 2);
+	divide(preMult * 16, depth, result, CV_16S);
 	return result;
 }
 
 cv::Mat disparity2Depth(cv::Mat &disparity, Camera camera1, Camera camera2)
 {
 	Mat preMult;
+	//double camDistance = 0.05; //VARIABLE
 	double camDistance = norm(camera1.pos3D - camera2.pos3D);
-	cv::multiply(disparity, camera1.pixelSize, preMult, 1, CV_64F);
+	cv::multiply(disparity, camera1.pixelSize, preMult, 1, CV_32F);
 	Mat depth = (camDistance * 16 * camera1.f / preMult);	//INEFFICIENT
 	depth.setTo(0, depth < -100000 | depth > 100000);
 	return depth;
 }
 
-//Mat getDisparityFromPair(std::vector<cv::Mat> &images, std::vector<Camera> &cameras, cv::Mat &mask, std::array<int, 2> pair)
-//{
-//	int kernelSize = 20;
-//	Mat depth = Mat{ images[12].size(), CV_64FC1 };
-//	Mat disparity = Mat{ images[12].size(), CV_8UC1 };
-//	Size resolution = images[0].size();
-//	Point2i halfRes = resolution / 2;
-//	double camDistance = norm(cameras[pair[0]].pos3D - cameras[pair[1]].pos3D);
-//	waitKey(0);
-//	for (int y = kernelSize; y < (resolution.height - kernelSize); y++) {
-//		for (int x = kernelSize; x < resolution.width - kernelSize; x++) {
-//			if (mask.at<uint8_t>(Point(x, y)) == 0) continue;
-//			Mat kernel = images[pair[0]](Rect{ Point2i{x - kernelSize, y - kernelSize}, Point2i{x + kernelSize, y + kernelSize} });
-//
-//			Point3d vec = cameras[pair[0]].inv_project(Point2i{ x, y }-halfRes);
-//			Point3d p1 = cameras[pair[0]].pos3D + (vec * 0.5);
-//			Point3d p2 = cameras[pair[0]].pos3D + vec;
-//			Point2i pixel1 = cameras[pair[1]].project(p1) + halfRes;
-//			Point2i pixel2 = cameras[pair[1]].project(p2) + halfRes;
-//			if (pixel1.x<kernelSize || pixel1.y < kernelSize || pixel1.x > resolution.width - kernelSize || pixel1.y > resolution.height - kernelSize) {
-//				continue;
-//			}
-//			if (pixel2.x<kernelSize || pixel2.y < kernelSize || pixel2.x > resolution.width - kernelSize || pixel2.y > resolution.height - kernelSize) {
-//				continue;
-//			}
-//			std::vector<Point2i> pixels = bresenham(pixel1, pixel2);
-//			std::vector<double> error;
-//			for (auto p : pixels) {
-//				Rect selector = Rect{ p - Point(kernelSize, kernelSize), p + Point(kernelSize, kernelSize) };
-//				Mat selection = images[pair[1]](selector);
-//				Mat result{ CV_32FC1 };
-//
-//				error.push_back(getAbsDiff(selection, kernel));
-//			}
-//
-//			int maxIndex = std::distance(error.begin(), std::min_element(error.begin(), error.end()));
-//
-//			Point2i pixel = pixels[maxIndex];
-//			//std::cout << norm(pixel - Point2i{ x, y }) << std::endl;
-//			disparity.at<unsigned char>(Point(x, y)) = (int)norm(pixel - Point2i{ x, y });
-//		}
-//	}
-//	//imshow("Disp", disparity);
-//	return disparity;
-//}
-
-//Mat getDisparityFromPair2(std::vector<cv::Mat>& images, std::vector<Camera>& cameras, cv::Mat& mask, std::array<int, 2> pair)
-//{
-//	int kernelSize = 20;
-//	Mat depth = Mat{ images[12].size(), CV_64FC1 };
-//	Mat disparity = Mat{ images[12].size(), CV_8UC1 };
-//	Size resolution = images[0].size();
-//	Point2i halfRes = resolution / 2;
-//	double camDistance = norm(cameras[pair[0]].pos3D - cameras[pair[1]].pos3D);
-//
-//	double preMultX = (cameras[pair[0]].pos3D.x - cameras[pair[1]].pos3D.x) / camDistance;
-//	double preMultY = (cameras[pair[0]].pos3D.y - cameras[pair[1]].pos3D.y) / camDistance;
-//	int size[3] = { resolution.width, resolution.height, 155 };
-//	cv::Mat errorStorage = cv::Mat(3, size, CV_16U, cv::Scalar(0));
-//
-//	for (int y = kernelSize; y < (resolution.height - kernelSize); y++) {
-//		for (int x = kernelSize; x < resolution.width - kernelSize; x++) {
-//			if (mask.at<uint8_t>(Point(x, y)) == 0) continue;
-//			Mat kernel = images[pair[0]](Rect{ Point2i{x - kernelSize, y - kernelSize}, Point2i{x + kernelSize, y + kernelSize} });
-//
-//			Point2i pixel1 = { x + int(100 * preMultX), y + int(100 * preMultY) };
-//			Point2i pixel2 = { x + int(255 * preMultX), y + int(255 * preMultY) };
-//
-//			if (pixel1.x<kernelSize || pixel1.y < kernelSize || pixel1.x > resolution.width - kernelSize || pixel1.y > resolution.height - kernelSize) {
-//				continue;
-//			}
-//			if (pixel2.x<kernelSize || pixel2.y < kernelSize || pixel2.x > resolution.width - kernelSize || pixel2.y > resolution.height - kernelSize) {
-//				continue;
-//			}
-//
-//			std::vector<Point2i> pixels = bresenham(pixel1, pixel2);
-//
-//			std::vector<int> error;
-//			for (int p = 0; p < pixels.size(); p++) {
-//				Rect selector = Rect{ pixels[p] - Point(kernelSize, kernelSize), pixels[p] + Point(kernelSize, kernelSize) };
-//				Mat selection = images[pair[1]](selector);
-//				int err = getAbsDiff(selection, kernel);
-//				error.push_back(err);
-//				errorStorage.at<unsigned short>(x, y, p) = err;
-//			}
-//
-//			int maxIndex = std::distance(error.begin(), std::min_element(error.begin(), error.end()));
-//
-//			Point2i pixel = pixels[maxIndex];
-//			//std::cout << norm(pixel - Point2i{ x, y }) << std::endl;
-//			disparity.at<unsigned char>(Point(x, y)) = (int)norm(pixel - Point2i{ x, y });
-//		}
-//	}
-//
-//	//imshow("Disp", disparity);
-//	Mat globDisparity{ disparity.size(), disparity.type() };
-//
-//	for (int y = 1; y < (resolution.height)-1; y++) {
-//		std::cout << " Y: " << y << std::endl;
-//		for (int x = 1; x < resolution.width-1; x++) {
-//			Range range[] = { Range(y,y+1), Range(x,x+1), Range::all() };
-//			Mat data = errorStorage(range);
-//			unsigned short disp =
-//				disparity.at<unsigned char>(y - 1, x) +
-//				disparity.at<unsigned char>(y + 1, x) +
-//				disparity.at<unsigned char>(y, x - 1) +
-//				disparity.at<unsigned char>(y, x + 1);
-//			disp = disp / 4;
-//			for (auto e = 0; e < data.size[0]; e++) {
-//				data.at<unsigned char>(e) = data.at<unsigned char>(e) + (abs(e + 100 - disp) > 0) * 100 + (abs(e + 100 - disp) > 1) * 500;
-//			}
-//			double min;
-//			Point minLoc;            
-//			try
-//			{
-//				minMaxLoc(data, &min, nullptr, &minLoc, nullptr);
-//			}
-//			catch (cv::Exception & e)
-//			{
-//				std::cout << e.what() << std::endl;
-//			}
-//			try 
-//			{
-//				std::cout << y << std::endl;
-//				globDisparity.at<unsigned char>(y, x) = minLoc.x + 100;
-//			}
-//			catch(cv::Exception & e)
-//			{
-//				std::cout << e.what() << std::endl;
-//			}
-//		}
-//	}
-//	showImage("Disp", disparity);
-//	showImage("Glob", globDisparity);
-//	return globDisparity;
-//}
-
-//cv::Mat getDisparityFromPairSGM(cv::Mat& image1, cv::Mat& image2, cv::Mat& mask, Camera cam1, Camera cam2, int P1, int P2)
-//{
-//	Point3d distance = cam1.pos3D - cam2.pos3D;
-//	Ptr<StereoSGBM> sgbm;
-//	Mat* im1pointer = &image1;
-//	Mat* im2pointer = &image2;
-//	Mat im1rot, im2rot;
-//
-//	int disp12MaxDiff = 12;
-//	int preFilterCap = 4;
-//	int uniquenessRatio = 1;
-//	int speckleWindowSize = 100;
-//	int speckleRange = 5;
-//
-//
-//	if (distance.x > 0) {
-//		sgbm = StereoSGBM::create(-240, 144, 1, P1, P2, disp12MaxDiff, preFilterCap, uniquenessRatio, speckleWindowSize, speckleRange, StereoSGBM::MODE_HH);
-//	}
-//	else if (distance.x < 0) {
-//		sgbm = StereoSGBM::create(96, 144, 1, P1, P2, disp12MaxDiff, preFilterCap, uniquenessRatio, speckleWindowSize, speckleRange, StereoSGBM::MODE_HH);
-//	}
-//	else if (distance.y > 0) {
-//		sgbm = StereoSGBM::create(-240, 144, 1, P1, P2, disp12MaxDiff, preFilterCap, uniquenessRatio, speckleWindowSize, speckleRange, StereoSGBM::MODE_HH);
-//		rotate(image1, im1rot, ROTATE_90_COUNTERCLOCKWISE);
-//		rotate(image2, im2rot, ROTATE_90_COUNTERCLOCKWISE);
-//		im1pointer = &im1rot;
-//		im2pointer = &im2rot;
-//	}
-//	else if (distance.y < 0) {
-//		sgbm = StereoSGBM::create(96, 144, 1, P1, P2, disp12MaxDiff, preFilterCap, uniquenessRatio, speckleWindowSize, speckleRange, StereoSGBM::MODE_HH);
-//		rotate(image1, im1rot, ROTATE_90_COUNTERCLOCKWISE);
-//		rotate(image2, im2rot, ROTATE_90_COUNTERCLOCKWISE);
-//		im1pointer = &im1rot;
-//		im2pointer = &im2rot;
-//	}
-//	cv::Mat disparity;
-//	sgbm->setMode(StereoSGBM::MODE_SGBM);
-//	sgbm->compute(*im1pointer, *im2pointer, disparity);
-//	if (distance.y != 0) {
-//		rotate(disparity, disparity, ROTATE_90_CLOCKWISE);
-//	}
-//	disparity = abs(disparity);
-//	std::cout << disparity.type() << std::endl;
-//	disparity.convertTo(disparity, 2);
-//	disparity.setTo(0, mask == 0);
-//
-//	return disparity;
-//}
-
-cv::Mat getDisparityFromPairSGM(std::array<int,2> pair, int P1, int P2)
+void getCameras(std::vector<Camera>& cameras, std::string positionFilePath, double f, double sensorSize, double pixelSize)
 {
+	if (images.size() < 1) {
+		throw("Load images first to get image size");
+	}
+	cameras.clear();
+	Size resolution = images[0].size();
+	Point2i principalPoint; double fx, fy;
+	std::vector<Point3d> camPositions;
 
-	Point3d distance = cameras[pair[0]].pos3D - cameras[pair[1]].pos3D;
-	Ptr<StereoSGBM> sgbm;
-	Mat* im1pointer = &images[pair[0]];
-	Mat* im2pointer = &images[pair[1]];
-	Mat im1rot, im2rot;
+	FileStorage camPosFile(positionFilePath + "\\cameraPosition.xyz", FileStorage::READ);
+	if (positionFilePath != "" && camPosFile.isOpened()) {
+			
+			camPosFile["camera_positions"] >> camPositions;		// Load camera positions from file
+			if (!camPosFile["camera_pixel_size"].empty()) {
+				camPosFile["camera_pixel_size"] >> pixelSize; pixelSize = pixelSize / 1000 / scale;
+			} else if (!camPosFile["camera_sensor_width"].empty()) {
+				camPosFile["camera_sensor_width"] >> sensorSize;// Load sensor width from file
+				pixelSize = sensorSize / resolution.width;		// Calculate pixel size from sensor width
+			} else
+				throw("No sensor width or pixel size provided. Camera information cannot be calculated");
+			camPosFile.release();
+	}
+	else
+	{
+		std::cout << "Camera positions file could not be found. Resorting to theoretical positions." << std::endl;
+		for (int y = 0; y < 5; y++)
+			for (int x = 0; x < 5; x++)
+				camPositions.push_back(Point3d{ 0.1 - x * 0.05, 0.1 - y * 0.05, -0.84 });
+	}
 
-	int disp12MaxDiff = 12;
-	int preFilterCap = 4;//PreFilterCap			4
-	int uniqRatio = 2;	// Uniqueness ratio		
-	int sWinSize = 200;	// Speckle window size	100
-	int sRange = 10;	// Speckle range
-	int numDisp = 48;	// Number of disparities
-	int minDisp = 250;	// Minimum disparity
-	
+	if (!K.empty())
+	{
+		f = (K.at<double>(0, 0) + K.at<double>(1, 1)) / 2 * pixelSize;
+		fx = K.at<double>(0, 0) * pixelSize;
+		fy = K.at<double>(1, 1) * pixelSize;
+		principalPoint = Point2i{ (int)K.at<double>(0,2), (int)K.at<double>(1,2) };
+	}
+	else
+	{
+		fx = f;
+		fy = f;
+		principalPoint = Point2i{ resolution.width/2, resolution.height/2 };
+	}
+	if (pixelSize == 0) 
+		pixelSize = sensorSize / resolution.width;
 
-	if (distance.x > 0) {
-		sgbm = StereoSGBM::create(-minDisp - numDisp, numDisp, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
-	}
-	else if (distance.x < 0) {
-		sgbm = StereoSGBM::create(minDisp, numDisp, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
-	}
-	else if (distance.y < 0) {
-		sgbm = StereoSGBM::create(-minDisp - numDisp, numDisp, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
-		rotate(images[pair[0]], im1rot, ROTATE_90_COUNTERCLOCKWISE);
-		rotate(images[pair[1]], im2rot, ROTATE_90_COUNTERCLOCKWISE);
-		im1pointer = &im1rot;
-		im2pointer = &im2rot;
-	}
-	else if (distance.y > 0) {
-		sgbm = StereoSGBM::create(minDisp, numDisp, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
-		rotate(images[pair[0]], im1rot, ROTATE_90_COUNTERCLOCKWISE);
-		rotate(images[pair[1]], im2rot, ROTATE_90_COUNTERCLOCKWISE);
-		im1pointer = &im1rot;
-		im2pointer = &im2rot;
-	}
-	cv::Mat disparity;
-	//sgbm->setMode(StereoSGBM::MODE_SGBM);
-	sgbm->compute(*im1pointer, *im2pointer, disparity);
-	if (distance.y != 0) {
-		rotate(disparity, disparity, ROTATE_90_CLOCKWISE);
-	}
-	disparity = abs(disparity);
-	disparity.convertTo(disparity, 2);
-	disparity.setTo(0, mask == 0);
-
-	return disparity;
+	for (Point3d& cam : camPositions)
+			cameras.push_back(Camera(f, fx, fy, cam, pixelSize, principalPoint));
+	std::cout << "Image Resolution: " << resolution << std::endl;
+	std::cout << "Pixel Size: " << pixelSize << std::endl;
+	std::cout << "Focal length: " << f << std::endl;
 }
 
-void getCameras(std::vector<Camera>& cameras, cv::Size resolution, std::string positionFilePath, double f, double sensorSize, double pixelSize)
+void getCameras(std::vector<Camera>& cameras, float baseline)
 {
-	std::cout << "Image Resolution: " << resolution << std::endl;
-	if (pixelSize == 0) {
-		pixelSize = sensorSize / resolution.width;
+	if (images.size() < 1) {
+		throw("Load images first to get image size");
 	}
-	std::cout << "Pixel Size: " << pixelSize << std::endl;
+	cameras.clear();
+	Size resolution = images[0].size();
+	double f = 0.05, sensorSize = 0.036;
+	double pixelSize = sensorSize / resolution.width;
+	std::vector<Point3d> camPositions;
 
-	if (positionFilePath == "") {
-		for (int y = 0; y < 5; y++)
-		{
-			for (int x = 0; x < 5; x++)
-			{
-				cameras.push_back(Camera(f, Point3d{ 0.1 - x * 0.05, 0.1 - y * 0.05, -0.75 }, pixelSize));	//VARIABLE
-				//cameras.push_back(Camera(f, Point3d{ -0.1 + x * 0.05, -0.1 + y * 0.05, -0.75 }, pixelSize)); // Renders
-			}
-		}
-	}
-	else {
-		std::vector<Point3d> camPositions;
-		FileStorage camPosFile(positionFilePath + "\\cameraPosition.xyz", FileStorage::READ);
-		std::vector<Point3d> camPositions;
-		camPosFile["camera_positions"] >> camPositions;
-		camPosFile.release();
-		for (auto& camPos : camPositions)
-		{
-			cameras.push_back(Camera(f, camPos, pixelSize));
-		}
-	}
+	float b = baseline;
+	for (int y = 0; y < 5; y++)
+		for (int x = 0; x < 5; x++)
+			camPositions.push_back(Point3d{ 2*b - x * b, 2*b - y * b, -0.84 });
+
+	double fx = f;
+	double fy = f;
+	Point2i principalPoint = Point2i{ resolution.width / 2, resolution.height / 2 };
+
+	for (Point3d& cam : camPositions)
+		cameras.push_back(Camera(f, fx, fy, cam, pixelSize, principalPoint));
+	std::cout << "Image Resolution: " << resolution << std::endl;
+	std::cout << "Pixel Size: " << pixelSize << std::endl;
+	std::cout << "Focal length: " << f << std::endl;
 }
 
 void getImages(std::vector<cv::Mat>& images, std::string folderName, double scale)
 {
+	images.clear();
 	std::vector<std::string> files = getImagesPathsFromFolder(folderName);
 	for (int i = 0; i < files.size(); i++) {
-		images.push_back(imread(files[i], IMREAD_GRAYSCALE));
-		resize(images.back(), images.back(), Size(), scale, scale);
+		images.push_back(imread(files[i], IMREAD_GRAYSCALE | IMREAD_ANYDEPTH));
+		//cv::Vec3f screenBall = getBallScreenParams(images.back(), 478, 485);
+		//circle(images.back(), Point2i(screenBall[0], screenBall[1]), screenBall[2]+2000, Scalar(0, 0, 0), 3950, 8, 0);
+		//showImage("back", images.back());
+		if(scale!=1)
+			resize(images.back(), images.back(), Size(), scale, scale);
 	}
-}
-
-cv::Mat improveWithDisparity(cv::Mat& disparity, cv::Mat centerImage, std::vector<cv::Mat> &images, std::vector<std::array<Camera, 2>> &cameras, int windowSize)
-{
-	Mat mask = getFaceMask(centerImage);
-	Mat improvedDisparity{ disparity.size(), disparity.type() };
-	int kernelSize = (windowSize - 1) / 2;
-	for (int c = 0; c < cameras.size(); c++) {
-		std::array<Camera,2> cam = cameras[c];
-
-		Mat shifted = shiftPerspectiveWithDisparity(cam[0], cam[1], disparity, images[c]);
-		Point2d distance = Point2d{ cam[0].pos3D.x - cam[1].pos3D.x, cam[0].pos3D.y - cam[1].pos3D.y };
-		distance.x = distance.x / norm(distance.x) && (distance.x>0.001);
-		distance.y = distance.y / norm(distance.y) && (distance.y > 0.001);
-		std::cout << distance << std::endl;
-		for (int y = 0; y < centerImage.rows; y++) {
-			for (int x = 0; x < centerImage.cols; x++) {
-				if (mask.at<uint8_t>(Point(x, y)) == 0) continue; 
-				Mat window = centerImage(Rect{ Point2i{x - kernelSize, y - kernelSize}, Point2i{x + kernelSize, y + kernelSize} });
-				std::vector<double> error;
-				for (int p = 0; p <= 10; p++) {
-					Point2i newP = Point2i{ x, y } + (Point2i) distance * (p - 5);
-					Mat compWindow = shifted(Rect{ newP - Point2i{kernelSize, kernelSize}, newP + Point2i{kernelSize, kernelSize} });
-					error.push_back(getAbsDiff(compWindow, window));
-				}
-				int maxIndex = (int)std::distance(error.begin(), std::min_element(error.begin(), error.end()));
-				improvedDisparity.at<unsigned char>(y, x) = disparity.at<unsigned char>(y, x) + ((double)maxIndex - 5.)*(distance.x+distance.y);
-			}
-		}
-
-	}
-	return improvedDisparity;
-}
-
-cv::Mat iterDisparityImproveSGM(cv::Mat& disparity, Mat& mask, cv::Mat& centerIm, cv::Mat& offCenterIm, Camera centerCam, Camera offCenterCam)
-{
-	Mat improvedDisparity{ disparity.size(), disparity.type() };
-	Mat center;
-	centerIm.copyTo(center, mask);
-
-	Mat shifted = shiftPerspectiveWithDisparity(centerCam, offCenterCam, disparity, offCenterIm);
-	showImage("shifted", shifted);
-	Ptr<cv::StereoSGBM> sgbm = cv::StereoSGBM::create(
-		-16, 32, 1,
-		2, 16, 12,
-		4, 1,
-		10, 2,
-		cv::StereoSGBM::MODE_HH
-	);
-
-	Mat addDisp;
-	sgbm->setMode(cv::StereoSGBM::MODE_SGBM);
-	sgbm->compute(center, shifted, addDisp);
-
-	add(disparity, addDisp, improvedDisparity, mask, disparity.type());
-	std::cout << disparity.type() << addDisp.type() << improvedDisparity.type() << std::endl;
-	std::cout << "After " << addDisp.at<signed short>(718, 613) << std::endl;
-
-	return improvedDisparity;
-}
-
-cv::Mat shiftPerspectiveWithDisparity(Camera& inputCam, Camera& outputCam, cv::Mat& disparity, cv::Mat& image)
-{
-	Mat shiftedImage = Mat{ image.size() , image.type() };
-	double camDistance = norm(inputCam.pos3D - outputCam.pos3D);
-
-	double preMultX = (inputCam.pos3D.x - outputCam.pos3D.x) / norm(inputCam.pos3D - outputCam.pos3D) / 16;
-	double preMultY = (inputCam.pos3D.y - outputCam.pos3D.y) / norm(inputCam.pos3D - outputCam.pos3D) / 16;
-	for (int y = 0; y < shiftedImage.rows; y++) {
-		for (int x = 0; x < shiftedImage.cols; x++) {
-			double disp = disparity.at<ushort>(y, x);
-			if (disp == 0) {
-				continue;
-			}
-			int shiftedX = (int) (disp * preMultX) + x;
-			int shiftedY = (int)(disp * preMultY) + y;
-			if (shiftedY >= disparity.rows || shiftedY < 0 || shiftedX >= disparity.cols || shiftedX < 0)
-				continue;
-			shiftedImage.at<unsigned char>(y, x) = image.at<unsigned char>(shiftedY, shiftedX);
-		}
-	}
-	return shiftedImage;
-}
-
-cv::Mat shiftPerspective(Camera inputCam, Camera outputCam, cv::Mat &depth)
-{
-	Mat shiftedDepthMap = Mat{ depth.size() , depth.type() };
-	double preMultX = (inputCam.pos3D.x - outputCam.pos3D.x) * inputCam.f / inputCam.pixelSize;
-	double preMultY = (inputCam.pos3D.y - outputCam.pos3D.y) * inputCam.f / inputCam.pixelSize;
-	//std::cout << "direction0 " << direction[0] << std::endl;
-	for (int x = 0; x < depth.cols; x++) {
-		for (int y = 0; y < depth.rows; y++) {
-			double d = depth.at<ushort>(y,x);
-			if (d < 0.5) 
-				continue;
-			int shiftedX = int(preMultX / d) + x;
-			int shiftedY = int(preMultY / d) + y;
-			if (shiftedY >= depth.rows || shiftedY < 0 || shiftedX >= depth.cols || shiftedX < 0) 
-				continue;
-			shiftedDepthMap.at<double>(Point(shiftedX, shiftedY)) = d;
-		}
-	}
-	return shiftedDepthMap;
-}
-
-cv::Mat shiftDisparityPerspective(Camera inputCam, Camera outputCam, cv::Mat& disparity)
-{
-
-	Mat shiftedDepthMap = Mat{ disparity.size() , disparity.type() };
-	/// Hardcoded cam distance difference of 0.05m. Disparity counts with 1/16 pixel VARIABLE
-	double camXDiff = (inputCam.pos3D.x - outputCam.pos3D.x) / (0.05 * 16);
-	double camYDiff = (inputCam.pos3D.y - outputCam.pos3D.y) / (0.05 * 16);
-
-	for (int x = 0; x < disparity.cols; x++) {
-		for (int y = 0; y < disparity.rows; y++) {
-			double d = disparity.at<ushort>(y, x);
-			if (d == 0) continue;
-			int shiftedX = camXDiff * d + x;
-			int shiftedY = camYDiff * d + y;
-			//std::cout << shiftedX << ", " << shiftedY << std::endl;
-			if (shiftedY >= disparity.rows || shiftedY < 0 || shiftedX >= disparity.cols || shiftedX < 0)
-				continue;
-			shiftedDepthMap.at<ushort>(Point(shiftedX, shiftedY)) = d;
-		}
-	}
-
-	return shiftedDepthMap;
-}
-
-void fillHoles(cv::Mat& disparity, int filterSize) 
-{
-	Mat binaryMask = (disparity != 0);
-	Mat blurWeights{ disparity.size(), CV_16U };
-	GaussianBlur(binaryMask, blurWeights, Size(filterSize, filterSize), 0, 0);
-
-	Mat blurredDisparity;
-	GaussianBlur(disparity, blurredDisparity, Size(filterSize, filterSize), 0, 0);
-
-	Mat weightedBlur;
-	divide(blurredDisparity, blurWeights, weightedBlur, 256, CV_16U);
-
-	weightedBlur.copyTo(disparity, disparity==0);
-}
-
-std::vector< std::vector<std::array<int, 2>> > getGroups(std::vector<Camera> &cameras, std::string groupType)
-{
-	std::vector< std::vector<std::array<int, 2>> > groups;
-	if (groupType == "CHESS") {
-		for (int i = 0; i < 25; i += 2) {
-			groups.push_back(getCameraPairs(cameras, pairType::CROSS, i));
-		}
-	}
-	return groups;
 }
 
 cv::Mat Points3DToDepthMap(std::vector<Point3d>& points, Camera camera, cv::Size resolution)
@@ -475,97 +144,32 @@ cv::Mat Points3DToDepthMap(std::vector<Point3d>& points, Camera camera, cv::Size
 	return depthMap;
 }
 
-std::vector<Point3d> DepthMapToPoints3D(cv::Mat& depthMap, Camera camera, cv::Size resolution)
+std::vector<Point3d> DepthMapToPoints3D(cv::Mat& depthMap, Camera camera, Point2i principalPoint, Mat mask)
 {
-	Point2i halfRes = resolution / 2;
 	std::vector<Point3d> Points;
-	for (int u = 0; u < depthMap.cols; u++) {
-		for (int v = 0; v < depthMap.rows; v++) {
-			double depth = depthMap.at<double>(Point(u, v));
-			if (depth > 0.1)
-				Points.push_back( camera.pos3D + camera.inv_project(Point(u,v)-halfRes) * depth );
+	for (int v = 0; v < depthMap.rows; v++) {
+		for (int u = 0; u < depthMap.cols; u++) {
+			double depth = depthMap.at<double>(v,u);
+			if (mask.at<uchar>(v,u)>0)
+				Points.push_back( camera.pos3D + camera.inv_project(Point(u,v)- principalPoint) * depth );
 		}
 	}
 	return Points;
 }
 
-std::vector<std::array<int, 2>> getCameraPairs(const std::vector<Camera>& cameras, const pairType pair) {
-	std::vector<std::array<int, 2>> pairs;
-	if (pair == pairType::TO_CENTER) {
-		for (int i = 0; i < cameras.size(); i++) {
-			if (i == 12) continue;
-			pairs.push_back({ 12, i });
-		}
-	}
-	else if (pair == pairType::TO_CENTER_SMALL) {
-			pairs.push_back({ 12, 6 });
-			pairs.push_back({ 12, 7 });
-			pairs.push_back({ 12, 8 });
-			pairs.push_back({ 12, 11 });
-			pairs.push_back({ 12, 13 });
-			pairs.push_back({ 12, 16 });
-			pairs.push_back({ 12, 17 });
-			pairs.push_back({ 12, 18 });
-	}
-	else if (pair == pairType::MID_LEFT) {
-		pairs.push_back({ 12, 11 });
-	}
-	else if (pair == pairType::MID_RIGHT) {
-		pairs.push_back({ 12, 13 });
-	}
-	else if (pair == pairType::LEFT_LEFTER) {
-		pairs.push_back({ 11, 10 });
-	}
-	else if (pair == pairType::RIGHT_RIGHTER) {
-		pairs.push_back({ 14, 13 });
-	}
-	else if (pair == pairType::MID_TOP) {
-		pairs.push_back({ 12, 7 });
-	}
-	else if (pair == pairType::MID_BOTTOM) {
-		pairs.push_back({ 12, 17 });
-	}
-	else if (pair == pairType::LINE_HORIZONTAL) {
-		for (int i = 10; i < 15; i++) {
-			if (i == 12) continue;
-			pairs.push_back({ 12, i });
-		}
-	}
-	else if (pair == pairType::LINE_VERTICAL) {
-		for (int i = 2; i < 25; i+=5) {
-			if (i == 12) continue;
-			pairs.push_back({ 12, i });
-		}
-	}
-	else if (pair == pairType::CROSS) {
-			pairs.push_back({ 12, 11 });
-			pairs.push_back({ 12, 13 });
-			pairs.push_back({ 12, 7 });
-			pairs.push_back({ 12, 17 });
-	}
-	else if (pair == pairType::JUMP_CROSS) {
-		pairs.push_back({ 12, 10 });
-		pairs.push_back({ 12, 14 });
-		pairs.push_back({ 12, 2 });
-		pairs.push_back({ 12, 24 });
-	}
-	return pairs;
-}
+std::vector<int> getCrossIDs(int centerCameraID) {
+	std::vector<int> cams;
+		if (centerCameraID - 5>0)
+			cams.push_back(centerCameraID - 5 );
+		if (centerCameraID + 5<25)
+			cams.push_back(centerCameraID + 5 );
+		cams.push_back(centerCameraID);
+		if (centerCameraID % 5>0)
+			cams.push_back(centerCameraID - 1 );
+		if (centerCameraID % 5 < 4)
+			cams.push_back(centerCameraID + 1 );
 
-std::vector<std::array<int, 2>> getCameraPairs(const std::vector<Camera>& cameras, const pairType pair, const int cameraNum) {
-	std::vector<std::array<int, 2>> pairs;
-	if (pair == pairType::CROSS) {
-		if(cameraNum-5>0)
-			pairs.push_back({ cameraNum, cameraNum - 5 });
-		if(cameraNum+5<25)
-			pairs.push_back({ cameraNum, cameraNum + 5 });
-		if(cameraNum%5>0)
-			pairs.push_back({ cameraNum, cameraNum - 1 });
-		if (cameraNum % 5 < 4)
-			pairs.push_back({ cameraNum, cameraNum + 1 });
-		
-	}
-	return pairs;
+	return cams;
 }
 
 int getAbsDiff(cv::Mat& mat1, cv::Mat& mat2)
@@ -574,88 +178,73 @@ int getAbsDiff(cv::Mat& mat1, cv::Mat& mat2)
 }
 
 double calculateAverageError(cv::Mat &image)
-{
-	std::string folder = "Images";
-	std::vector<std::string> files = getImagesPathsFromFolder(folder);
+{;
+	std::vector<std::string> files = getImagesPathsFromFolder(imageFolder);
 	Mat centerFace = imread(files[12], IMREAD_GRAYSCALE);
 	Mat mask = getFaceMask(centerFace);
 	resize(mask, mask, image.size());
 	return cv::mean(image, mask)[0];
 }
 
-cv::Mat depth2Normals(const cv::Mat& depth, Camera cam)
+cv::Mat depth2Normals(const cv::Mat& depth, Camera cam, int normalDistance, int bilateralF1, int bilateralF2, int gaussianF)
 {
 	Mat depth32F;
-	depth.convertTo(depth32F, CV_32F);	
 	Mat blurredDepth;
-	bilateralFilter(depth32F, blurredDepth, 0, 4, 15);
-
-	GaussianBlur(blurredDepth, blurredDepth, Size{ 79,79 },0,0); // VARIABLE
-	double orthogonalDiff = cam.pixelSize / cam.f * 2;
-	cv::Mat normals(depth.size(), CV_32FC3);
-
-	for (int y = 3; y < depth.rows-3; ++y)
+	depth.convertTo(depth32F, CV_32F);
+	blurredDepth = depth32F;
+	if (bilateralF2 != 0)
 	{
-		for (int x = 3; x < depth.cols-3; ++x)
+		/// If bilatteral fitering is requested, overwrite the blurredDepth variable
+		bilateralFilter(depth32F, blurredDepth, 0, bilateralF1, bilateralF2);	
+		//bilateralFilter(depth32F, blurredDepth, 0, 4, 15);
+	}
+
+	float orthogonalDiff = float(2 * cam.pixelSize / cam.f);
+	cv::Mat normals(depth.size(), CV_32FC3);
+	int d = normalDistance;
+	for (int y = d; y < depth.rows-d; ++y)
+	{
+		for (int x = d; x < depth.cols-d; ++x)
 		{
-			float dzdx = blurredDepth.at<float>(y, x + 1) - blurredDepth.at<float>(y, x - 1);
-			float dzdy = blurredDepth.at<float>(y - 1, x) - blurredDepth.at<float>(y + 1, x);
+			float dzdx = (blurredDepth.at<float>(y, x + d) - blurredDepth.at<float>(y, x - d)) / 2
+				+ (blurredDepth.at<float>(y-d, x + d) - blurredDepth.at<float>(y-d, x - d)) / 4
+				+ (blurredDepth.at<float>(y+d, x + d) - blurredDepth.at<float>(y+d, x - d)) / 4;
+			float dzdy = (blurredDepth.at<float>(y - d, x) - blurredDepth.at<float>(y + d, x)) / 2
+				+ (blurredDepth.at<float>(y - d, x+d) - blurredDepth.at<float>(y + d, x+d)) / 4
+				+ (blurredDepth.at<float>(y - d, x-d) - blurredDepth.at<float>(y + d, x-d)) / 4;
 
 			Vec3f d(-dzdx, -dzdy, orthogonalDiff * blurredDepth.at<float>(y, x));
 			Vec3f n = normalize(d);
 			normals.at<Vec3f>(y, x) = n;
 		}
 	}
-	//showImage("Normals", normals);
-	return normals;
-}
-
-// UNOPERATIONAL
-cv::Mat disparity2Normals(cv::Mat& disparity, Mat& mask, Camera cam)
-{
-	Mat avgDisparity;
-	avgDisparity = blurWithMask(disparity, mask, 49);
-	float camDist = 0.05f;	/// VARIABLE
-	double preMult = 16. * (double)camDist * cam.f / cam.pixelSize;
-
-	cv::Mat normals(disparity.size(), CV_32FC3);
-
-	for (int x = 3; x < disparity.rows - 3; ++x)
+	if (gaussianF != 0)
 	{
-		for (int y = 3; y < disparity.cols - 3; ++y)
-		{
-			if (mask.at<uchar>(x, y) == 0) continue;
-			float dzdx = float(preMult / avgDisparity.at<ushort>(x + 1, y) - preMult / avgDisparity.at<ushort>(x - 1, y));
-			float dzdy = float(preMult / avgDisparity.at<ushort>(x, y + 1) - preMult / avgDisparity.at<ushort>(x, y - 1));
-
-			Vec3f d(-dzdx, -dzdy, 2 * camDist * avgDisparity.at<ushort>(x, y));
-			Vec3f n = normalize(d);
-
-			normals.at<Vec3f>(x, y) = n;
-		}
+		GaussianBlur(normals, normals, Size{ gaussianF,gaussianF }, 0, 0);
+		//GaussianBlur(blurredDepth, blurredDepth, Size{ 79,79 },0,0); // VARIABLE
 	}
-
-	//showImage("normals", abs(normals));
+	//showImage("Normals", (normals + 1) / 2, 1, true, 0.5);
 	return normals;
 }
 
-cv::Mat getOrthogonalityFromCamera(const cv::Mat& depth, cv::Mat& mask, cv::Mat& normals, Camera perspective, Camera orthogonality)
+cv::Mat getOrthogonalityFromCamera(const cv::Mat& depth, cv::Mat mask, cv::Mat& normals, Camera perspective, Camera orthogonality)
 {
 	Mat blurredDepth = depth;
 	//blur(depth, blurredDepth, Size{ 3,3 });
 	Vec3f camDiff3D = (Vec3f)(Vec3d)perspective.pos3D - (Vec3f)(Vec3d)orthogonality.pos3D;
 	Mat camAngle{ depth.size(), CV_32FC3, Scalar{0,0,0} };
-	double preMult = perspective.pixelSize / perspective.f;
-
+	float preMultX = float(perspective.pixelSize / perspective.fx);
+	float preMultY = float(perspective.pixelSize / perspective.fy);
+	//showImage("mask", mask);
 	for (int v = 0; v < depth.rows; v++) {
 		for (int u = 0; u < depth.cols; u++) {
 			if (mask.at<uchar>(v, u) == 0) {
 				continue;
 			}
-			double d = blurredDepth.at<double>(v, u);
+			float d = blurredDepth.at<float>(v, u);
 			Vec3f pos3D(
-				(u - (depth.cols / 2)) * d * preMult,
-				-(v - (depth.rows / 2)) * d * preMult,
+				(u - perspective.principalPoint.x) * d * preMultX,
+				-(v - perspective.principalPoint.y) * d * preMultY,
 				d
 			);
 			pos3D = pos3D + camDiff3D;
@@ -663,8 +252,8 @@ cv::Mat getOrthogonalityFromCamera(const cv::Mat& depth, cv::Mat& mask, cv::Mat&
 		}
 	}
 	//showImage("depth", depth);
-	//showImage("camAngle", camAngle);
-	//showImage("Normals", normals);
+	//showImage("camAngle", abs(camAngle));
+	//showImage("Normals", abs(normals));
 
 	Mat normalOrthogonality = matrixDot(camAngle, normals);
 	//Mat occlusion = getOcclusion(blurredDepth, camAngle, perspective, orthogonality);
@@ -679,8 +268,9 @@ cv::Mat getOrthogonalityFromCamera(const cv::Mat& depth, cv::Mat& mask, cv::Mat&
 	//erode(occlusion, occlusion, kernel);
 	//showImage("occlusion3", occlusion);
 	//multiply(normalOrthogonality, occlusion, normalOrthogonality, 1. / 255., normalOrthogonality.type());
-	cv::threshold(normalOrthogonality, normalOrthogonality, 0, FLT_MAX, cv::THRESH_TOZERO);
-	showImage("normalOrthogonality", normalOrthogonality, 1, false);
+	//cv::threshold(normalOrthogonality, normalOrthogonality, 0, FLT_MAX, cv::THRESH_TOZERO);
+	normalOrthogonality.setTo(0, normalOrthogonality < 0);
+	//showImage("normalOrthogonality", normalOrthogonality, 1, false);
 	//showImage("occlusion", occlusion);
 	return normalOrthogonality;
 }
@@ -688,12 +278,14 @@ cv::Mat getOrthogonalityFromCamera(const cv::Mat& depth, cv::Mat& mask, cv::Mat&
 cv::Mat getPixelNormals(Camera& camera, Mat& image)
 {
 	cv::Mat normals(image.size(), CV_32FC3);
+	float f = (float)camera.f;
+	float pixelSize = (float)camera.pixelSize;
 	for (int u = 0; u < image.cols; u++) {
 		for (int v = 0; v < image.rows; v++) {
 			Vec3f pixelNormal(
-				(u - image.cols / 2) *	camera.pixelSize, 
-				(v - image.rows / 2) *	camera.pixelSize, 
-				camera.f
+				(u - image.cols / 2) *	pixelSize, 
+				(v - image.rows / 2) *	pixelSize, 
+				f
 			);
 			normals.at<Vec3f>(v, u) = normalize(pixelNormal);
 		}
@@ -736,7 +328,7 @@ cv::Mat getOcclusion(const cv::Mat& depth, const cv::Mat& camAngles, Camera pers
 {
 	Mat occlusion{ depth.size(), CV_8U , Scalar{255} };
 	Point3d relPos = occlusionCaster.pos3D - perspective.pos3D;
-	float orthogonalDiff = perspective.pixelSize / perspective.f;
+	float orthogonalDiff = (float)(perspective.pixelSize / perspective.f);
 	float invOrthDiff = 1 / orthogonalDiff;
 	int halfRows = depth.rows / 2, halfCols = depth.cols / 2;
 	for (int r = 0; r < depth.rows; r++)
@@ -878,6 +470,34 @@ void exportOBJfromDisparity(cv::Mat disparityImage, std::string fileName, Camera
 	outputFile.close();
 }
 
+void exportXYZfromDisparity(cv::Mat disparityImage, std::string fileName, Camera cam, float camDistance, Point2i principalPoint, float scale, cv::Mat mask)
+{
+	double preMult = camDistance * cam.f * 16 / cam.pixelSize;
+	if (scale != 1.f) {
+		resize(disparityImage, disparityImage, Size{}, scale, scale);
+	}
+	Mat_<float> Z;
+	divide(preMult, disparityImage, Z, CV_32F);
+	std::ofstream outputFile(fileName);
+	for (int u = 0; u < Z.rows; u++)
+	{
+		for (int v = 0; v < Z.cols; v++)
+		{
+			if (mask.at<uchar>(u, v) > 0)
+			{
+				float xp = 1000 * Z(u, v) * cam.pixelSize * (v - principalPoint.x) / cam.fx;
+				float yp = 1000 * Z(u, v) * cam.pixelSize * (u - principalPoint.y) / cam.fy;
+				float zp = 1000 * Z(u, v);
+				outputFile << -yp << " " << -xp << " " << -zp << std::endl;
+				//outputFile << Z(u, v) * cam.pixelSize * (v - principalPoint.x) / cam.fx << " " << Z(u, v) * cam.pixelSize * (u - principalPoint.y) / cam.fy << " " << Z(u, v) << std::endl;
+
+			}
+		}
+	}
+	outputFile.close();
+}
+
+
 cv::Mat getDiffWithAbsoluteReference(Mat disparity, Rect area, bool verbose)
 {
 	Mat disparityHolder{ images[0].size(), CV_16SC1 };
@@ -888,7 +508,7 @@ cv::Mat getDiffWithAbsoluteReference(Mat disparity, Rect area, bool verbose)
 	disparityHolder = disparityHolder(Rect{ area.tl() * refDisparity.cols / images[0].cols, area.br() * refDisparity.cols / images[0].cols });
 	refDisparity = refDisparity((Rect{ area.tl() * refDisparity.cols / images[0].cols, area.br() * refDisparity.cols / images[0].cols }));
 	Mat difference;
-	subtract(disparityHolder, refDisparity, difference, noArray(), disparity.type());
+	subtract(disparityHolder, refDisparity, difference, noArray(), disparityHolder.type());
 	difference = abs(difference);
 	difference.convertTo(difference, 0);
 	if (verbose)
@@ -896,7 +516,7 @@ cv::Mat getDiffWithAbsoluteReference(Mat disparity, Rect area, bool verbose)
 	return difference;
 }
 
-float getAvgDiffWithAbsoluteReference(Mat disparity, Rect area, bool verbose, std::string savePath)
+double getAvgDiffWithAbsoluteReference(Mat disparity, Rect area, bool verbose, std::string savePath)
 {
 	Mat difference = getDiffWithAbsoluteReference(disparity, area, verbose);
 
@@ -908,39 +528,245 @@ float getAvgDiffWithAbsoluteReference(Mat disparity, Rect area, bool verbose, st
 
 }
 
-Mat getCrossSGM(int centerCam, StereoSGBMImpl2 sgbm, bool verbose) 
+__forceinline uchar noiseResistantLocalBinaryWeight(ushort n1, ushort n2, ushort threshold)
 {
-	std::vector<Mat> imageVector;
-	std::vector<Point2i> directions;
-	std::vector<std::array<int, 2>> pairs = getCameraPairs(cameras, pairType::CROSS, centerCam);
-	imageVector.push_back(images[pairs[0][0]]);
-	//showImage("imgC", imageVector[0]);
-	Mat disparity;
-	//Mat sumDisparity{ imageVector[0].size(), CV_16SC1, Scalar{0} };
-	for (auto &p : pairs)
-	{
-		//if (p != std::array<int, 2>{12, 13}) continue;
-		imageVector.push_back(images[p[1]]);
-		Point3d dir = (cameras[p[1]].pos3D - cameras[p[0]].pos3D);
-		directions.push_back(Point2i{ (dir.x > 0) - (dir.x < 0), (dir.y > 0) - (dir.y < 0) });
-		if (verbose) {
-			sgbm.computeMultiCam(std::vector<Mat>{images[pairs[0][0]], images[p[1]]}, std::vector<Point2i>{Point2i{ (dir.x > 0) - (dir.x < 0), (dir.y > 0) - (dir.y < 0) }}, disparity);
-			//std::cout << getAvgDiffWithAbsoluteReference(disparity, true) << std::endl;
-			//sumDisparity += disparity / 4;
-			showImage("subdisparity cam: " + std::to_string(p[1]), disparity - 4800, 70, true);
-
-		}
-			
-	}
-	//return sumDisparity;
-	sgbm.computeMultiCam(imageVector, directions, disparity);
-	return disparity;
+	return ((n1 - n2) > threshold) + (abs(n1 - n2) <= threshold) * 2;
 }
 
-void blurImages(std::vector<cv::Mat>& images, int blurKernel)
+__forceinline uchar noiseResistantLocalBinaryCombine(uchar vals[8])
 {
-	for(auto im : images)
-		blur(im, im, Size{ blurKernel, blurKernel });
+	//std::cout << (int)vals[0] << (int)vals[1] << (int)vals[2] << (int)vals[3] << (int)vals[4] << (int)vals[5] << (int)vals[6] << (int)vals[7] << std::endl;
+
+	int counter=0;
+denoise:;
+	counter = 0;
+	for (int i = 0; i < 8; i++)
+	{
+		int i_m = (i+7) % 8;
+		int i_p = (i+1) % 8;
+		if (vals[i] == 2) {
+			if (vals[i_m] != 2) {
+				vals[i] = vals[i_m];
+			}
+			else if (vals[i_p] != 2) {
+				vals[i] = vals[i_p];
+			}
+		}
+		counter += vals[i] != 2;
+	}
+
+	if (counter == 8)
+	{
+		goto combine;
+	}
+	else if (counter == 0)
+	{
+		return 0;
+	}
+	else goto denoise;
+combine:;
+	//std::cout << (int)vals[0] << (int)vals[1] << (int)vals[2] << (int)vals[3] << (int)vals[4] << (int)vals[5] << (int)vals[6] << (int)vals[7] << std::endl;
+	return vals[0] + 
+		(vals[1] << 1) + 
+		(vals[2] << 2) + 
+		(vals[3] << 3) + 
+		(vals[4] << 4) + 
+		(vals[5] << 5) + 
+		(vals[6] << 6) + 
+		(vals[7] << 7);
+}
+
+void noiseResistantLocalBinaryPattern(std::vector<cv::Mat>& images, ushort threshold)
+{
+	for (auto& im : images)
+	{
+		Mat_<uchar> hamming{ im.size() };
+		ushort* imptr = im.ptr<ushort>(0);
+		uchar* hamptr = hamming.ptr<uchar>(0);
+		hamming = 0;
+		uchar vals[8] = { 0 };
+		ushort intensities[9] = { 0 };
+		int d = 4;
+		for (int r = d; r < im.rows - d; r++)
+		{
+			for (int c = d; c < im.cols - d; c++)
+			{
+				intensities[0] = imptr[(r - d) * im.cols + c]    ;
+				intensities[1] = imptr[(r - d) * im.cols + c - d];
+				intensities[2] = imptr[(r)	   * im.cols + c - d];
+				intensities[3] = imptr[(r + d) * im.cols + c - d];
+				intensities[4] = imptr[(r + d) * im.cols + c]    ;
+				intensities[5] = imptr[(r + d) * im.cols + c + d];
+				intensities[6] = imptr[(r)     * im.cols + c + d];
+				intensities[7] = imptr[(r - d) * im.cols + c + d];
+				intensities[8] = imptr[r	   * im.cols + c];
+
+				vals[0] = noiseResistantLocalBinaryWeight(intensities[0], intensities[8], threshold);
+				vals[1] = noiseResistantLocalBinaryWeight(intensities[1], intensities[8], threshold);
+				vals[2] = noiseResistantLocalBinaryWeight(intensities[2], intensities[8], threshold);
+				vals[3] = noiseResistantLocalBinaryWeight(intensities[3], intensities[8], threshold);
+				vals[4] = noiseResistantLocalBinaryWeight(intensities[4], intensities[8], threshold);
+				vals[5] = noiseResistantLocalBinaryWeight(intensities[5], intensities[8], threshold);
+				vals[6] = noiseResistantLocalBinaryWeight(intensities[6], intensities[8], threshold);
+				vals[7] = noiseResistantLocalBinaryWeight(intensities[7], intensities[8], threshold);
+				//std::cout << intensities[0] << ", "
+				//	<< intensities[1] << ", "
+				//	<< intensities[2] << ", "
+				//	<< intensities[3] << ", "
+				//	<< intensities[4] << ", "
+				//	<< intensities[5] << ", "
+				//	<< intensities[6] << ", "
+				//	<< intensities[7] << ", "
+				//	<< intensities[8] << ", "
+				//	<< std::endl;
+				//std::cout << (int)vals[0] << ", "
+				//	<< (int)vals[1] << ", "
+				//	<< (int)vals[2] << ", "
+				//	<< (int)vals[3] << ", "
+				//	<< (int)vals[4] << ", "
+				//	<< (int)vals[5] << ", "
+				//	<< (int)vals[6] << ", "
+				//	<< (int)vals[7] << ", "
+				//	<< std::endl;
+				hamptr[r * im.cols + c] = noiseResistantLocalBinaryCombine(vals);
+				//waitKey(0);
+			}
+		}
+		im = hamming;
+		//showImage("im", im, 1, true, 0.2);
+	}
+}
+
+void localBinaryThreadUchar(Mat& im, Mat& LBP, int distance)
+{
+	uchar* imptr = im.ptr<uchar>(0);
+	uchar* hamptr = LBP.ptr<uchar>(0);
+	uchar vals[8] = { 0 };
+	int d = distance;
+	int ddiag = int(cv::sqrt(distance * distance/2)+0.5);
+	for (int r = d; r < im.rows - d; r++)
+	{
+		for (int c = d; c < im.cols - d; c++)
+		{
+			hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r - d	  ) * im.cols + c]		  );
+			hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r - ddiag) * im.cols + c - ddiag]) << 1;
+			hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r		  ) * im.cols + c - d]	  ) << 2;
+			hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r + ddiag) * im.cols + c - ddiag]) << 3;
+			hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r + d	  ) * im.cols + c]		  ) << 4;
+			hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r + ddiag) * im.cols + c + ddiag]) << 5;
+			hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r		  ) * im.cols + c + d]	  ) << 6;
+			hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r - ddiag) * im.cols + c + ddiag]) << 7;
+		}
+	}
+}
+
+void localBinaryThreadUshort(Mat& im, Mat& LBP, int distance)
+{
+	ushort* imptr = im.ptr<ushort>(0);
+	uchar* hamptr = LBP.ptr<uchar>(0);
+	uchar vals[8] = { 0 };
+	int d = distance;
+	int ddiag = int(cv::sqrt(distance * distance / 2) + 0.5);
+	for (int r = d; r < im.rows - d; r++)
+	{
+		for (int c = d; c < im.cols - d; c++)
+		{
+			hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r - d) * im.cols + c]);
+			hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r - ddiag) * im.cols + c - ddiag]) << 1;
+			hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r)*im.cols + c - d]) << 2;
+			hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r + ddiag) * im.cols + c - ddiag]) << 3;
+			hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r + d) * im.cols + c]) << 4;
+			hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r + ddiag) * im.cols + c + ddiag]) << 5;
+			hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r)*im.cols + c + d]) << 6;
+			hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r - ddiag) * im.cols + c + ddiag]) << 7;
+		}
+	}
+}
+
+void localBinaryPattern(std::vector<cv::Mat>& images, std::vector<cv::Mat>& LBPs, int distance)
+{
+	LBPs.clear();
+	std::vector<std::thread> threads;
+	for (int i = 0; i < images.size(); i++)
+	{
+		LBPs.push_back(Mat(images[i].size(), CV_8U, Scalar(0)));
+	}
+	if (images[0].type() == CV_8U) {
+		for (int i = 0; i < images.size(); i++)
+		{
+			threads.push_back(std::thread(localBinaryThreadUchar, std::ref(images[i]), std::ref(LBPs[i]), distance));
+		}
+	}
+	else if (images[0].type() == CV_16U)
+	{
+		for (int i = 0; i < images.size(); i++)
+		{
+			threads.push_back(std::thread(localBinaryThreadUshort, std::ref(images[i]), std::ref(LBPs[i]), distance));
+		}
+	}
+
+	for (auto& thr : threads)
+	{
+		thr.join();
+	}
+	for (int i = 0; i < images.size(); i++)
+	{
+		if(images[i].type()!=CV_8U)
+			images[i].convertTo(images[i], CV_8U, 1. / 256.);
+	}
+}
+
+void blurImages(std::vector<cv::Mat>& images, float blurSigma)
+{
+	for (auto& im : images) 
+	{
+		Mat_<uchar> hamming{ im.size() };
+		ushort* imptr = im.ptr<ushort>(0);
+		uchar* hamptr = hamming.ptr<uchar>(0);
+		hamming = 0;
+		uchar vals[8] = { 0 };
+		for (int r = 1; r < im.rows-1; r++)
+		{
+			for (int c = 1; c < im.cols-1; c++)
+			{
+				hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r - 1) * im.cols + c]    );
+				hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r - 1) * im.cols + c - 1]) << 1 ;
+				hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r	)   * im.cols + c - 1])	<< 2 ;
+				hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r + 1) * im.cols + c - 1]) << 3 ;
+				hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r + 1) * im.cols + c]	  ) << 4 ;
+				hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r + 1) * im.cols + c + 1]) << 5 ;
+				hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r	)   * im.cols + c + 1]) << 6 ;
+				hamptr[r * im.cols + c] += (imptr[r * im.cols + c] <= imptr[(r - 1) * im.cols + c + 1]) << 7 ;
+			}
+		}
+		im = hamming;
+		//showImage("im", im, 1, true, 2);
+	}
+
+		//Mat blurred;
+		//Mat floatIm;
+		//im.convertTo(floatIm, CV_32FC1);
+		////Mat floatImSquared = floatIm.mul(floatIm);
+		//GaussianBlur(floatIm, blurred, Size{ 0, 0 }, blurSigma);
+		//GaussianBlur(floatIm, floatIm, Size{ 0, 0 }, blurSigma / 5.);
+		//subtract(floatIm, blurred, floatIm, noArray());
+		//floatIm = floatIm * 5 + 128;
+		//floatIm.convertTo(im, CV_8UC1);
+
+		//Mat blurred;
+		//Mat blurredSquared;
+		//Mat floatIm;
+		//Mat stdDev;
+		//im.convertTo(floatIm, CV_32FC1);
+		//GaussianBlur(floatIm, blurred, Size{ 31,31 }, 0);
+		//Mat floatImSquared = floatIm.mul(floatIm);
+		//GaussianBlur(floatImSquared, blurredSquared, Size{ 31,31 }, 0);
+		//cv::sqrt(blurredSquared - blurred.mul(blurred), stdDev);
+		//subtract(floatIm, blurred, floatIm, noArray());
+		//floatIm /= stdDev / 10;
+		//floatIm += 128;
+		//floatIm.convertTo(im, CV_8UC1);
+		//showImage("im", im);
 }
 
 void normalizeMats(std::vector<cv::Mat>& images)
@@ -978,14 +804,34 @@ void subImgsAndCams(std::vector<int> ids, std::vector<Mat>& outputMats, std::vec
 	}
 }
 
+inline short median(std::vector<short>& v)
+{
+	size_t n = v.size() / 2;
+	nth_element(v.begin(), v.begin() + n, v.end());
+	return v[n];
+}
+
 Mat getVectorMatsAverage(std::vector<cv::Mat>& mats)
 {
 	Mat sum = Mat{ mats[0].size(), mats[0].type(), Scalar{0} };
-	for (auto &m : mats)
+	std::vector<short> values;
+	for (int r = 0; r < mats[0].rows; r++)
 	{
-		sum += m;
+		for (int c = 0; c < mats[0].cols; c++)
+		{
+			values.clear();
+			for (int m = 0; m < mats.size(); m++)
+			{
+				values.push_back(mats[m].at<short>(r, c));
+			}
+			sum.at<short>(r, c) = median(values);
+		}
 	}
-	sum /= mats.size();
+	//for (auto &m : mats)
+	//{
+	//	sum += m;
+	//}
+	//sum /= mats.size();
 	return sum;
 }
 
@@ -998,7 +844,7 @@ void makeArrayCollage(std::vector<cv::Mat> images, cv::Size arrayShape, float mu
 		std::vector<Mat> subVector;
 		for (int j = 0; j < arrayShape.width; j++)
 		{
-			subVector.push_back(images[i*arrayShape.height+j]);
+			subVector.push_back(images[i * arrayShape.height + j]);
 		}
 		cv::hconcat(subVector, hConcats[i]);
 	}
@@ -1006,70 +852,353 @@ void makeArrayCollage(std::vector<cv::Mat> images, cv::Size arrayShape, float mu
 	showImage("Collage", collage, multiplier, false, scale);
 }
 
-std::vector<cv::Mat> testSGMimages;
-std::vector<Camera> testSGMcameras;
+std::vector<int> testSGMCamIDs;
+
 int testSGMminD;
 int testSGMnumD;
 cv::Rect testSGMarea;
+Mat testSGMgroundTruth;
 
 namespace plt = matplotlibcpp;
 
 static void pixelSGM(int event, int x, int y, int flags, void* param)
 {
-	std::vector<Mat> images = *((std::vector<Mat>*)param);
-	x *= 2;
-	y *= 2;
 	if (event == cv::MouseEventTypes::EVENT_LBUTTONDOWN)
 	{
+		x *= 2;
+		y *= 2;
 		std::cout << x << ", " << y << std::endl;
-		plt::figure(0);
-		plt::clf();
-		for (int c = 0; c< testSGMcameras.size(); c++)
-		{
-			std::vector<cv::Mat> subImages2;
-			std::vector<Camera> subCameras2;
-			subImgsAndCams({ c }, subImages2, subCameras2);
-			std::vector<float> error = calcPixelArrayIntensity(testSGMimages[c], testSGMcameras[c],
-			testSGMcameras[(testSGMcameras.size()-1)/2], testSGMminD, testSGMminD + testSGMnumD, 
-			Point2i{ x+testSGMarea.x,y+testSGMarea.y });
-			plt::plot(error, { {"label", std::to_string(c)} });
-		}		
-		plt::legend();
-		waitKey(10);
-		plt::save("temp\\Intensities.jpg");
+
 		plt::figure(1);
 		plt::clf();
-		std::vector<float> error = calcDisparityCostForPlotting(testSGMimages, testSGMcameras,
-			testSGMcameras[(testSGMcameras.size() - 1) / 2],
-			x + testSGMarea.x, y + testSGMarea.y, testSGMminD, testSGMminD + testSGMnumD, costMetric::Intensity);
-		std::vector<float> diffError = calcDisparityCostForPlotting(testSGMimages, testSGMcameras,
-			testSGMcameras[(testSGMcameras.size() - 1) / 2], 
-			x + testSGMarea.x, y + testSGMarea.y, testSGMminD, testSGMminD + testSGMnumD, costMetric::Derivative);
-		plt::plot(error, { {"label", "error"} });
-		plt::plot(diffError, { {"label", "diffError"} });
-		plt::legend();
-		plt::save("temp\\Costs.jpg");
-		//plt::show();
-		Mat intImg = imread("temp\\Intensities.jpg");
-		Mat costImg = imread("temp\\Costs.jpg");
-		Mat concat;
-		vconcat(intImg, costImg, concat);
-		showImage("Intensities and costs", concat, 1, false, 0.85);
+	//	for (int id : testSGMCamIDs) {
+	//		std::vector<float> error = calcDisparityCostForPlotting(images, cameras,
+	//			id,x + testSGMarea.x, y + testSGMarea.y, testSGMminD, testSGMminD + testSGMnumD);
+	//		std::vector<float> error2 = calcDisparityCostForPlotting(images, cameras,
+	//			id, x + testSGMarea.x+1, y + testSGMarea.y, testSGMminD, testSGMminD + testSGMnumD);
+	//		std::vector<float> error3 = calcDisparityCostForPlotting(images, cameras,
+	//			id, x + testSGMarea.x-1, y + testSGMarea.y, testSGMminD, testSGMminD + testSGMnumD);
+	//		std::vector<float> error4 = calcDisparityCostForPlotting(images, cameras,
+	//			id, x + testSGMarea.x, y + 1 + testSGMarea.y, testSGMminD, testSGMminD + testSGMnumD);
+	//		std::vector<float> error5 = calcDisparityCostForPlotting(images, cameras,
+	//			id, x + testSGMarea.x-1, y + 1 + testSGMarea.y, testSGMminD, testSGMminD + testSGMnumD);
+	//		std::vector<float> error6 = calcDisparityCostForPlotting(images, cameras,
+	//			id, x + testSGMarea.x+1, y + 1 + testSGMarea.y, testSGMminD, testSGMminD + testSGMnumD);
+	//		std::vector<float> sumError;
+	//		for (int i = 0; i < error.size(); i++)
+	//		{
+	//			sumError.push_back(error[i] + error2[i] + error3[i]+ error4[i] + error5[i] + error6[i]);
+	//		}
+	//		plt::plot(sumError, { {"label", "error cam" + std::to_string(id)}, {"linewidth", "0.5"} });
+	//		if (!testSGMgroundTruth.empty())
+	//		{
+	//			plt::axvline(testSGMgroundTruth.at<short>(y, x) / 16 - testSGMminD, 0, 1, { {"linewidth", "0.3"} });
+	//		}
+	//		calcPixelArrayIntensity(images[id], cameras[id], cameras[12], testSGMminD, 
+	//			testSGMminD + testSGMnumD, Point2i(x + testSGMarea.x, y + testSGMarea.y));
+	//	}
+	//	plt::legend();
+	//	plt::save("temp\\Costs.jpg");
+	//	//plt::show();
+	//	//Mat intImg = imread("temp\\Intensities.jpg");
+	//	Mat costImg = imread("temp\\Costs.jpg");
+	//	//Mat concat;
+	//	//vconcat(intImg, costImg, concat);
+	//	showImage("Intensities and costs", costImg, 1, false, 0.8);
+	//	//plt::show();
 	}
 }
 
-
-void testSGM(Mat disparity, std::vector<Mat> images, std::vector<Camera> cameras, int minD, int numD, Rect area)
+void testSGM(Mat disparity, std::vector<int> camIDs, int minD, int numD, Rect area, Mat groundTruth)
 {
-	testSGMimages = images;
-	testSGMcameras = cameras;
+	testSGMCamIDs = camIDs;
 	testSGMminD = minD;
 	testSGMnumD = numD;
 	testSGMarea = area;
+	testSGMgroundTruth = groundTruth;
 	cv::namedWindow("Disparity Click", cv::WindowFlags::WINDOW_AUTOSIZE);
 	Mat resizedDisparity;
-	resize(disparity, resizedDisparity, Size{}, 0.5, 0.5);
-	cv::imshow("Disparity Click", (resizedDisparity));
+	resize(disparity, resizedDisparity, Size{}, 0.5 / scale, 0.5 / scale);
+	if (resizedDisparity.type() == CV_8U)
+	{
+		cv::imshow("Disparity Click", resizedDisparity);
+	}
+	else 
+	{
+		cv::imshow("Disparity Click", (resizedDisparity - 4240 * scale) * 30/scale);
+	}
 	cv::setMouseCallback("Disparity Click", pixelSGM, &images);
 	cv::waitKey(0);
+}
+//
+//Point3d calibrateSingleCameraOrthogonal(int originCam, int calibrateCam, float step, StereoArraySGBM& sgbm, cv::Rect area)
+//{
+//	float minAvg = FLT_MAX;
+//	Point3d bestPos;
+//	std::vector<Mat> subImages;
+//	std::vector<Camera> subCameras;
+//	std::vector<Mat> empty{};
+//	std::vector<float> avgs;
+//	std::vector<double> is;
+//	subImgsAndCams({ originCam, calibrateCam }, subImages, subCameras);
+//	Point3d camDiff = subCameras[1].pos3D - subCameras[0].pos3D;
+//	Point3d stepDirection = Point3d{ camDiff.y, -camDiff.x, 0 };
+//	stepDirection = (Point3d)normalize((Vec3d)stepDirection);
+//	Mat disparity;
+//	int count = 1;
+//	for (int i = 0; i <= 16; i++) {
+//		subCameras[1].pos3D = cameras[calibrateCam].pos3D + (i - 8) * step * stepDirection;
+//		is.push_back(norm((i - 8) * step * stepDirection)*((i-8>0)*2-1));
+//		sgbm.computeMinCost(subImages, empty, subCameras, 12, area, disparity, 0.05);
+//		//showImage("minCost", disparity, 1, true);
+//		float avg = cv::mean(disparity)[0];
+//		std::cout << avg << ", " << subCameras[1].pos3D << std::endl;
+//		avgs.push_back(avg);
+//		if (avg < minAvg) 
+//		{
+//			minAvg = avg;
+//			bestPos = subCameras[1].pos3D;
+//		}
+//		else if (avg == minAvg)
+//		{
+//			count += 1;
+//			bestPos = bestPos * float(count - 1) / (float)count + subCameras[1].pos3D * (1. / (float)count);
+//		}
+//	}
+//	std::cout << bestPos << std::endl;
+//	plt::figure(1);
+//	plt::clf();
+//	plt::plot(is, avgs);
+//	plt::save("temp\\OrthCost.jpg");
+//	Mat intImg = imread("temp\\OrthCost.jpg");
+//	showImage("orthogonal cost", intImg, 1, false, 1);
+//	std::cout << "Best position for camera " << calibrateCam << ": " << bestPos << std::endl;
+//	return bestPos;
+//}
+//
+//Point3d calibrateSingleCameraParallel(int originCam, int calibrateCam, float step, StereoArraySGBM& sgbm, cv::Rect area, Mat referenceDisparity)
+//{
+//	float minAvg = FLT_MAX;
+//	Point3d bestPos;
+//	std::vector<Mat> subImages;
+//	std::vector<Camera> subCameras;
+//	std::vector<Mat> empty{};
+//	std::vector<float> avgs;
+//	std::vector<double> is;
+//	subImgsAndCams({ originCam, calibrateCam }, subImages, subCameras);
+//	Point3d camDiff = subCameras[1].pos3D - subCameras[0].pos3D;
+//	Point3d stepDirection = (Point3d)normalize((Vec3d)camDiff);
+//	Mat disparity;
+//	int count = 1;
+//	for (int i = 0; i <= 16; i++) {
+//		subCameras[1].pos3D = cameras[calibrateCam].pos3D + (i - 8) * step * stepDirection;
+//		is.push_back(norm((i - 8) * step * stepDirection) * ((i - 8 > 0) * 2 - 1));
+//		sgbm.compute(subImages, empty, subCameras, 12, area, disparity);
+//		float avg = cv::mean(abs(disparity-referenceDisparity))[0];
+//		std::cout << avg << ", " << subCameras[1].pos3D << std::endl;
+//		avgs.push_back(avg);
+//		if (avg < minAvg)
+//		{
+//			minAvg = avg;
+//			bestPos = subCameras[1].pos3D;
+//		}
+//		else if (avg == minAvg)
+//		{
+//			count += 1;
+//			bestPos = bestPos * float(count - 1) / (float)count + subCameras[1].pos3D * (1. / (float)count);
+//		}
+//	}
+//	plt::figure(1);
+//	plt::clf();
+//	std::cout << bestPos << std::endl;
+//	plt::plot(is, avgs);
+//	std::cout << "Best position for camera " << calibrateCam << ": " << bestPos << std::endl;
+//	plt::save("temp\\ParCost.jpg");
+//	Mat intImg = imread("temp\\ParCost.jpg");
+//	showImage("parallel cost", intImg, 1, false, 1);
+//	return bestPos;
+//}
+//
+//void calibrateCamerasFromOrigin(cv::Rect area, StereoArraySGBM& sgbm)
+//{
+//	showImage("pattern", images[12](area));
+//	float step = 0.75e-4;
+//	for (int c = 0; c < cameras.size(); c++)
+//	{
+//		if (c == 12) continue;
+//		std::cout << "Orthogonal calibration of camera " << c << std::endl;
+//		cameras[c].pos3D = calibrateSingleCameraOrthogonal(12, c, step, sgbm, area);
+//	}
+//
+//	std::vector<Point3d> camPositions;
+//	for (auto& c : cameras)
+//		camPositions.push_back(c.pos3D);
+//	FileStorage camPosFile(imageFolder + "\\cameraPositionEstimateDerivative.xyz", FileStorage::WRITE);
+//	camPosFile << "camera_positions" << camPositions;
+//	camPosFile << "camera_focal_length" << cameras[0].f;
+//	camPosFile << "camera_pixel_size" << cameras[0].pixelSize;
+//	camPosFile.release();
+//	std::vector<Mat> empty{};
+//	Mat disparity;
+//	sgbm.compute(images, empty, cameras, 12, area, disparity);
+//	showImage("Disparity", disparity-4300, 70, false, 1);
+//	for (int c = 0; c < cameras.size(); c++)
+//	{
+//		if (c == 12) continue;
+//		std::cout << "Parallel calibration of camera " << c << std::endl;
+//		cameras[c].pos3D = calibrateSingleCameraParallel(12, c, step, sgbm, area, disparity);
+//	}
+//
+//	camPositions.clear();
+//	for (auto& c : cameras)
+//		camPositions.push_back(c.pos3D);
+//	FileStorage camPosFile2(imageFolder + "\\cameraPositionEstimateDerivative2.xyz", FileStorage::WRITE);
+//	camPosFile2 << "camera_positions" << camPositions;
+//	camPosFile2 << "camera_focal_length" << cameras[0].f;
+//	camPosFile2 << "camera_pixel_size" << cameras[0].pixelSize;
+//}
+
+cv::Vec3f getBallScreenParams(cv::Mat image, int minSize, int maxSize)
+{
+	std::vector<cv::Vec3f> circles;
+	//image.convertTo(image, CV_8U, 1. / 256.);
+	HoughCircles(image, circles, HOUGH_GRADIENT, 3, 99999, 400, 100, minSize, maxSize);
+	Mat img = image.clone();
+	cvtColor(img, img, COLOR_GRAY2BGR);
+	for (size_t i = 0; i < circles.size(); i++)
+	{
+		Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
+		int radius = cvRound(circles[i][2]);
+		// draw the circle center
+		circle(img, center, 3, Scalar(0, 255, 0), -1, 8, 0);
+		// draw the circle outline
+		circle(img, center, radius, Scalar(0, 255, 255), 1, 8, 0);
+		std::cout << radius << std::endl;
+	}
+	if (circles.size() != 1)
+		throw(std::to_string(circles.size()) + " circles found, while 1 circle was expected.");
+	Rect roi = Rect{ Point2f(circles[0][0] - circles[0][2] * 1.1f, circles[0][1] - circles[0][2] * 1.1f),
+				Point2f(circles[0][0] + circles[0][2] * 1.1f, circles[0][1] + circles[0][2] * 1.1f) };
+	showImage("CirclePlot", img(roi), 1, false, 0.7f);
+	return circles[0];
+}
+
+cv::Mat generateBallDepthMap(cv::Size imageSize, cv::Vec3f ballScreenParameters, Camera camParameters, double ballRadius)
+{
+
+	Mat invK;
+	cv::invert(K, invK);
+	double mX = invK.at<double>(0, 0);
+	double mY = invK.at<double>(1, 1);
+	double pX = invK.at<double>(0, 2);
+	double pY = invK.at<double>(1, 2);
+
+	Mat_<float> ballDepth{imageSize};
+	ballDepth = FLT_MAX/2;
+	double Sp = camParameters.pixelSize;
+	//float f =  (float) camParameters.f;
+	double f = (K.at<double>(0, 0) + K.at<double>(1, 1))/2;
+	double a = (ballScreenParameters[2]);
+	double depth = ballRadius * sqrt(f * f / (a * a) + 1); // Distance between camera plane and ball, corrected for apparent size.
+	std::cout << "ball depth: " << depth << std::endl;
+	std::cout << "ball screen params: " << ballScreenParameters << std::endl;
+	double angleX = atan2((ballScreenParameters[0] - ballScreenParameters[2]) * mX + pX, 1)/2 + atan2((ballScreenParameters[0] + ballScreenParameters[2]) * mX + pX, 1)/2;
+	double angleY = atan2((ballScreenParameters[1] - ballScreenParameters[2]) * mY + pY, 1)/2 + atan2((ballScreenParameters[1] + ballScreenParameters[2]) * mY + pY, 1)/2;
+	double ballScreenXcenter = tan(angleX);
+	double ballScreenYcenter = tan(angleY);
+	Vec3d ballWorldParameters{
+		ballScreenXcenter,
+		ballScreenYcenter,
+		1
+	};
+	ballWorldParameters = normalize(ballWorldParameters) * depth;
+	Vec3d bwp = ballWorldParameters;
+
+	for (int r = 0; r < ballDepth.rows; r++)
+	{
+		for (int c = 0; c < ballDepth.cols; c++)
+		{
+			Vec3d unitCamRay = normalize(Vec3d{ double(c)*mX + pX,double(r)*mY + pY, 1.});
+			Vec3d pointClosestToBall = bwp.dot(unitCamRay)/unitCamRay.dot(unitCamRay) * unitCamRay;
+			double distance = cv::norm(pointClosestToBall - bwp);
+			if (distance > ballRadius) continue;
+			//std::cout << unitCamRay << std::endl;
+			//std::cout << pointClosestToBall << std::endl;
+			//std::cout << "dist " << distance << std::endl;
+			double ballInterceptDistance = sqrt(ballRadius * ballRadius - distance * distance);
+			Vec3d ballInterceptPoint = pointClosestToBall - unitCamRay * ballInterceptDistance;
+			//std::cout << r << ", " << c << ": " << ballInterceptPoint << std::endl;
+			ballDepth(r, c) = (float)ballInterceptPoint[2];
+		}
+	}
+	return ballDepth;
+}
+
+std::vector<float> movingAverage(std::vector<float>& inputVector, int windowSize)
+{
+	std::vector<float> mvAverage(inputVector.size(), 0);
+	mvAverage[0] = inputVector[0];
+	for (int i = 1; i < windowSize; i++)
+	{
+		mvAverage[i] = mvAverage[i - 1] * (i - 1) / i + inputVector[i] / i;
+	}
+	for (int i = windowSize; i < mvAverage.size(); i++)
+	{
+		mvAverage[i] = mvAverage[i - 1] - inputVector[i - windowSize] / windowSize + inputVector[i] / windowSize;
+	}
+	return mvAverage;
+}
+
+std::vector<float> centeredMovingAverage(std::vector<float>& inputVector, int windowSize)
+{
+	int vectorSize = (int)inputVector.size();
+	std::vector<float> mvAverage(inputVector.size(), 0);
+	int halfWindow = windowSize / 2;
+	int i = 0;
+	for (i = 0; i < halfWindow; i++)
+	{
+		mvAverage[0] += inputVector[i] / halfWindow;
+	}
+	for (i = 1; i < halfWindow; i++)
+	{
+		mvAverage[i] = (mvAverage[i - 1] * (halfWindow + i - 1) + inputVector[i+halfWindow-1]) / (halfWindow + i);
+	}
+	for (; i < vectorSize - halfWindow; i++)
+	{
+		mvAverage[i] = mvAverage[i - 1] - inputVector[i - halfWindow] / windowSize + inputVector[i + halfWindow - 1] / windowSize;
+	}
+	for (; i < vectorSize; i++)
+	{
+		mvAverage[i] = (mvAverage[i - 1] * (vectorSize - i + halfWindow) - inputVector[i - halfWindow]) 
+			/ (vectorSize - i + halfWindow - 1);
+	}
+	return mvAverage;
+}
+
+std::vector<float> centeredMovingAverageAbsoluteDeviation(std::vector<float>& inputVector, int windowSize)
+{
+	std::vector<float> avg = centeredMovingAverage(inputVector, windowSize);
+	std::vector<float> diff(inputVector.size(), 0);
+	for (int i = 0; i < inputVector.size(); i++)
+	{
+		diff[i] = abs(inputVector[i] - avg[i]);
+	}
+	return centeredMovingAverage(diff, windowSize);
+}
+
+std::vector<std::pair<float, float>> getSortedOrthogonalityDifference(cv::Mat depth, cv::Mat groundTruth, cv::Mat_<float> orthogonality, cv::Mat_<uchar> mask)
+{
+	Mat_<float> depthDiff = (depth - groundTruth);
+	std::vector< std::pair <float, float> > pairs;
+	for (int r = 1; r < depth.rows; r++)
+	{
+		for (int c = 1; c < depth.cols; c++)
+		{
+			if (mask(r, c) == 0)
+				continue;
+			pairs.push_back(std::pair(orthogonality(r, c), depthDiff(r, c)));
+		}
+	}
+	sort(pairs.begin(), pairs.end());
+	return pairs;
 }

@@ -1,5 +1,7 @@
 #pragma once
+#pragma warning (push, 0)	/// Disabling warnings for external libraries
 #include <opencv2/core.hpp>
+#pragma warning (pop)
 #include "Camera.h"
 
 

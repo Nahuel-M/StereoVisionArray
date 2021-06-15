@@ -1,11 +1,12 @@
+#pragma warning (push, 0)	/// Disabling warnings for external libraries
 #include "dlibFaceSelect.h"
 #include <dlib/image_processing/frontal_face_detector.h>
 #include <dlib/image_processing/render_face_detections.h>
 #include <dlib/image_processing.h>
 #include <dlib/image_io.h>
 #include <dlib/opencv.h>
-
 #include <opencv2/imgproc.hpp>
+#pragma warning (pop)
 
 cv::Mat getFaceMask(cv::Mat &sampleImage)
 {
@@ -37,7 +38,11 @@ std::vector<cv::Point2i> getFaceMaskPoints(cv::Mat& sampleImage)
     IplImage iplImage = cvIplImage(sampleImage);
     dlib::cv_image<uchar> img(iplImage);
     std::vector<dlib::rectangle> faces = detector(img);
-    std::cout << faces.size() << std::endl;
+    if (faces.size() != 1)
+    {
+        std::cout << "WARNING: " << std::to_string(faces.size()) << " faces detected" << std::endl;
+        throw("WARNING: " + std::to_string(faces.size()) + " faces detected");
+    }
     dlib::full_object_detection shape = sp(img, faces[0]);
 
     std::vector<cv::Point2i> PointIndices;

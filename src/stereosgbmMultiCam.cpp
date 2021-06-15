@@ -1,12 +1,18 @@
-
+#pragma warning (push, 0)	/// Disabling warnings for external libraries
 #include <limits.h>
 #include <iostream>
 #include <vector>
 #include "precomp.hpp"
 #include "opencv2/core/hal/intrin.hpp"
 #include "opencv2/core/utils/buffer_area.private.hpp"
+#pragma warning (pop)
+
 #include "stereosgbmMultiCam.h"
 #include "imageHandling.h"
+
+
+
+
 
 
 using namespace cv;
@@ -459,7 +465,7 @@ static void computeDisparitySGBM2(std::vector<Mat> images, std::vector<cv::Point
 
 
 	CostType* C = mem.getCBuf(0);
-	int matchCount = images.size() - 1;
+	int matchCount = (int)images.size() - 1;
 	P1 *= matchCount;
 	P2 *= matchCount;
 	matchCount = 1;

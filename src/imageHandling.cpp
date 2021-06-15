@@ -1,4 +1,3 @@
-
 #include <iostream>
 
 #include <filesystem>
@@ -48,7 +47,6 @@ std::vector<std::string> getImagesPathsFromFolder(std::string folderPath)
 	{
 		if(p.path().extension()==".jpg" || p.path().extension() == ".png")
 			filePaths.push_back(p.path().u8string());
-		//std::cout << p.path().u8string() << std::endl;
 	}
 	std::sort(filePaths.begin(), filePaths.end(), compareNat);
 	return filePaths;
@@ -161,18 +159,28 @@ void showImage(std::string name, cv::Mat image, double multiplier, bool hold, fl
 	}
 }
 
-void showDifference(std::string name, cv::Mat image1, cv::Mat image2, double multiplier)
+void showDifference(std::string name, cv::InputArray image1, cv::InputArray image2, double multiplier, cv::Mat mask)
 {
+	int finalHeight = 195;
+	if (image1.size() != image2.size() || (!mask.empty() && image1.size() != mask.size()))
+	{
+		std::cout << image1.size() << ", " << image2.size() << ", " << mask.size() << std::endl;
+		throw("Image sizes mismatch");
+	}
 	cv::Mat diff;
-	cv::subtract(image1, image2, diff, cv::noArray(), CV_16S);
-
+	int targetType = 3 ? 5 : image1.type() == 2;
+	cv::subtract(image1, image2, diff, mask, targetType);
+	//cv::resize(mask, mask, cv::Size{ finalHeight, finalHeight * diff.cols / diff.rows });
+	//cv::resize(diff, diff, cv::Size{ finalHeight, finalHeight * diff.cols / diff.rows });
 	cv::Mat pDiff = diff.clone();
 	cv::Mat nDiff = -diff.clone();
 	pDiff.setTo(0, pDiff < 0);
 	nDiff.setTo(0, nDiff < 0);
-
+	if (!mask.empty()) {
+		pDiff.setTo(SHRT_MAX, mask == 0);
+		nDiff.setTo(SHRT_MAX, mask == 0);
+	}
 	std::vector<cv::Mat> channels;
-	//cv::Mat z =cv::Mat::zeros(cv::Size(nDiff.cols, nDiff.rows), nDiff.type());
 	channels.push_back(nDiff);
 	channels.push_back(pDiff);
 	channels.push_back(pDiff);
@@ -181,10 +189,9 @@ void showDifference(std::string name, cv::Mat image1, cv::Mat image2, double mul
 	cv::merge(channels, merged);
 
 	cv::namedWindow(name, cv::WindowFlags::WINDOW_NORMAL);
-	cv::resizeWindow(name, 710, 540);
-	cv::resize(merged, merged, cv::Size{ 710,540 }, 0, 0, 0);
-	cv::resize(diff, diff, cv::Size{ 710,540 });
+	cv::resizeWindow(name, finalHeight, finalHeight * merged.cols / merged.rows);
 	cv::imshow(name, merged * multiplier);
 	cv::setMouseCallback(name, CallBackFuncs, &diff);
-	cv::waitKey(0);
+	cv::waitKey();
 }
+

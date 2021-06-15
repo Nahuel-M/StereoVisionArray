@@ -1,8 +1,11 @@
 #pragma once
+#pragma warning (push, 0)	/// Disabling warnings for external libraries
 #include <iostream>
+#include <fstream>
 #include <iterator>
 #include <vector>
 #include <opencv2/core.hpp>
+#pragma warning (pop)
 
 #include "Camera.h"
 #include "functions.h"
@@ -11,217 +14,366 @@
 
 namespace plt = matplotlibcpp;
 
+std::string imageFolder;
 std::vector<cv::Mat> images;
+std::vector<cv::Mat> LBPs;
 std::vector<cv::Mat> faceNormals;
 std::vector<Camera> cameras;
+std::vector<Camera> badCameras;
 cv::Mat mask;
 cv::Mat disparityRef; 
 cv::Mat K, D;
+cv::Mat groundTruth;
+cv::Mat groundTruthNormals;
+cv::Rect roi;
+int P1, P2;
+
+float scale = 1;
 
 using namespace cv;
 
-void setup(std::string folderName)
+void setupPhysical(std::string folderName)
 {
+	imageFolder = folderName;
+
 	/// Images
-	getImages(images, folderName, 1);
-	//getCameraIntrinsicParameters("..\\CameraCalibration\\calibration\\CalibrationFile", K, D);
-	//undistortImages(images, K, D);
-	blurImages(images, 4);
+	getImages(images, folderName, scale);
+	localBinaryPattern(images, LBPs, 4);
 
 	/// Cameras
-	getCameras(cameras, images[0].size(), folderName, 6e-3, 0, 1.55e-6);
-	//getCameras(cameras, images.back().size());
+	getCameraIntrinsicParameters("..\\CameraCalibration\\calibration2\\CalibrationFile", K, D);
+	getCameras(cameras, folderName);
 
-	/// Mask
-	//std::vector<cv::Point2i> maskPoints = getFaceMaskPoints(images[12]);
-	std::vector<cv::Point2i> maskPoints{ {1,1}, {images[0].rows - 1,1}, {images[0].rows - 1,images[0].cols - 1}, {1,images[0].cols - 1} };
+	/// Ball model
+	cv::Vec3f ballScreenParams = getBallScreenParams(images[12], 478, 482);
+	roi = Rect{ Point2f(ballScreenParams[0] - ballScreenParams[2] * 1.1f, ballScreenParams[1] - ballScreenParams[2] * 1.1f),
+		Point2f(ballScreenParams[0] + ballScreenParams[2] * 1.1f, ballScreenParams[1] + ballScreenParams[2] * 1.1f) };
+	groundTruth = generateBallDepthMap(images[12].size(), ballScreenParams, cameras[12], 0.099);
+	mask = groundTruth<0.99;
+	groundTruthNormals = depth2Normals(groundTruth, cameras[12]);
+
+	showImage("Mask", mask(roi), 1, false);
+	showImage("Ideal raytraced ball depth", groundTruth(roi), 1, true, 0.7f);
+	showImage("Ground truth normals", groundTruthNormals(roi), 1, false, 0.5);
+
+	P1 = 10; P2 = 80;
+}
+
+void setupPhysicalFace(std::string folderName)
+{
+	imageFolder = folderName;
+
+	/// Images
+	getImages(images, folderName, scale);
+	localBinaryPattern(images, LBPs, 4);
+
+	/// Cameras
+	getCameraIntrinsicParameters("..\\CameraCalibration\\calibration2\\CalibrationFile", K, D);
+	getCameras(cameras, folderName);
+
+	/// Ball model
+	std::vector<Point2i> maskPoints{
+		Point2i{2535,1365},
+		Point2i{2468,1530},
+		Point2i{2300,1640},
+		Point2i{1997,1660},
+		Point2i{1500,1500},
+		Point2i{1560, 950},
+		Point2i{2015, 920},
+		Point2i{2400,1050},
+		Point2i{2400,1050},
+		Point2i{2530,1220}
+	};
 	mask = drawMask(images.back(), maskPoints);
+	roi = cv::boundingRect(maskPoints);
+	roi.x -= 20; roi.y -= 20; roi.width += 40; roi.height += 40;
+	showImage("Mask", mask(roi), 1, false);
+	showImage("12", images[12](roi), 1, false);
+	//Mat masked;
+	//images[12].copyTo(masked, mask);
+	//showImage("masked", masked(roi), 1, true);
+	P1 = 10; P2 = 80;
+}
+
+
+void setupRender(std::string folderName, float baseline)
+{
+	imageFolder = folderName;
+
+	/// Images
+	getImages(images, folderName, scale);
+	localBinaryPattern(images, LBPs, 4);
+
+	/// Cameras
+	getCameras(cameras, baseline);
+
+	/// Face model
+	std::vector<cv::Point2i> maskPoints = getFaceMaskPoints(images[12]);
+	roi = cv::boundingRect(maskPoints);
+	roi.x -= 20; roi.y -= 20; roi.width += 40; roi.height += 40;
+	mask = drawMask(images.back(), maskPoints);
+	groundTruth = getIdealRef();
+	resize(groundTruth, groundTruth, images[0].size(), 0, 0, INTER_LINEAR);
+	groundTruth.convertTo(groundTruth, CV_32F);
+	groundTruthNormals = depth2Normals(groundTruth, cameras[12],1, 0, 0, 5);
+
+	showImage("Ground truth", groundTruth(roi), 1, false, 0.5);
+	showImage("Mask", mask(roi), 1, false, 0.5);
+	showImage("Ground truth normals", groundTruthNormals(roi), 1, false, 0.5);
+
+	P1 = 5; P2 = 30;
+}
+
+void pitchPerformance(int distP, int multiplier)
+{
+	std::string strdp = std::to_string(distP);
+	setupRender("Renders\\Renders"+strdp,float(distP)/1000.);
+	//setupPhysical("Photographs\\CalibrationBol12p" + strdp + "Undistorted");
+
+	Mat disparity;
+	int minDisparity = 235 * distP*multiplier / 50;
+	int numDisparities = 96;
+	int disp12MaxDiff = 1500;
+	int preFilterCap = 0; // Deprecated		
+	int uniqRatio = 0;	// Uniqueness ratio		
+	int sWinSize = 200;	// Speckle window size	100
+	int sRange = 5;	// Speckle range
+
+	StereoArraySGBM sgbm = StereoArraySGBM(minDisparity, numDisparities, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange);	 //Photograps/Series1
+	std::vector<Mat> empty{};
+
+	Mat_<float> groundTruthOrthogonality = getOrthogonalityFromCamera(groundTruth, mask, groundTruthNormals, cameras[12], cameras[12])(roi);
+	showImage("Orthogonality", groundTruthOrthogonality, 1, false, 0.5);
+
+	std::vector<int> c = { 12-multiplier*5,12-multiplier,12,12+multiplier,12+multiplier*5};
+	sgbm.compute(LBPs, images, empty, cameras, 12, roi, disparity, float(distP*multiplier)/1000., mask, c);
+	showImage("disparity", disparity - minDisparity * 16, 45, false, 0.5);
+	Mat depth = disparity2Depth(disparity, cameras[12], cameras[12+multiplier]);
+
+	std::vector<std::pair<float, float>> pairs = getSortedOrthogonalityDifference(depth, groundTruth(roi), groundTruthOrthogonality, mask(roi));
+	std::vector<float> depthError, orthogonality;
+	splitPairs(pairs, orthogonality, depthError);
+
+	int window = (int)orthogonality.size() / 300;
+	std::vector<float> mvAverage = centeredMovingAverage(depthError, window);
+	float lastHalfAvg = 0;
+	for (int n = mvAverage.size() / 2; n < mvAverage.size(); n++)
+		lastHalfAvg += mvAverage[n] / (mvAverage.size() / 2);
+	mvAverage += -lastHalfAvg;
+
+	showDifference("diff", depth - lastHalfAvg, groundTruth(roi), 100, mask(roi));
+	std::vector<float> deviation = centeredMovingAverageAbsoluteDeviation(depthError, window);
+	std::string str2dp = std::to_string(distP * multiplier);
+	saveVector("..\\..\\Python\\Plotting\\Data\\Pitch\\rPc5p" + str2dp + "Ort", orthogonality, window);
+	saveVector("..\\..\\Python\\Plotting\\Data\\Pitch\\rPc5p" + str2dp + "Avg", mvAverage, window);
+	saveVector("..\\..\\Python\\Plotting\\Data\\Pitch\\rPc5p" + str2dp + "Dev", deviation, window);
+
+}
+
+void camCountPerformance()
+{
+	//setupRender("Renders\\Renders50", 0.05);
+	setupPhysical("Photographs\\CalibrationBol12p50Undistorted");
+
+	Mat disparity;
+	int minDisparity = 235;// 245 * distP / 50;
+	int numDisparities = 96;
+	int disp12MaxDiff = 1500;
+	int preFilterCap = 0; // Deprecated		
+	int uniqRatio = 0;	// Uniqueness ratio		
+	int sWinSize = 200;	// Speckle window size	100
+	int sRange = 5;	// Speckle range
+
+	StereoArraySGBM sgbm = StereoArraySGBM(minDisparity, numDisparities, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange);	 //Photograps/Series1
+	std::vector<Mat> empty{};
+
+	Mat_<float> groundTruthOrthogonality = getOrthogonalityFromCamera(groundTruth, mask, groundTruthNormals, cameras[12], cameras[12])(roi);
+	showImage("Orthogonality", groundTruthOrthogonality, 1, true, 0.5);
+	std::vector<int> additiveCameraPos{ 12, 17, 11, 7, 13, 18, 8, 6, 16, 22, 14, 2, 10, 15, 23, 9, 1, 5, 21, 19, 3, 0, 20, 24, 4 };
+
+	std::vector<int> c = { 12, 17, 11};
+	for (int i = 3; i < additiveCameraPos.size(); i++)
+	{
+		c.push_back(additiveCameraPos[i]);
+		Mat_<float> groundTruthOrthogonality = getOrthogonalityFromCamera(groundTruth, mask, groundTruthNormals, cameras[12], cameras[12])(roi);
+
+		sgbm.compute(LBPs, images, empty, cameras, 12, roi, disparity, 0.05, mask, c);
+		showImage("disparity", disparity - minDisparity * 16, 45, false, 0.5);
+		Mat depth = disparity2Depth(disparity, cameras[12], cameras[13]);
+
+		std::vector<std::pair<float, float>> pairs = getSortedOrthogonalityDifference(depth, groundTruth(roi), groundTruthOrthogonality, mask(roi));
+		std::vector<float> depthError, orthogonality;
+		splitPairs(pairs, orthogonality, depthError);
+
+		int window = (int)orthogonality.size() / 500;
+		std::vector<float> mvAverage = centeredMovingAverage(depthError, window);
+		float lastHalfAvg = 0;
+		for (int n = mvAverage.size() / 2; n < mvAverage.size(); n++)
+			lastHalfAvg += mvAverage[n] / (mvAverage.size() / 2);
+		mvAverage += -lastHalfAvg;
+
+		showDifference("diff", depth - lastHalfAvg, groundTruth(roi), 200, mask(roi));
+		std::vector<float> deviation = centeredMovingAverageAbsoluteDeviation(depthError, window);
+		saveVector("..\\..\\Python\\Plotting\\Data\\Camcount\\pCc" + std::to_string(c.size()) + "Ort", orthogonality, 100);
+		saveVector("..\\..\\Python\\Plotting\\Data\\Camcount\\pCc" + std::to_string(c.size()) + "Avg", mvAverage, 100);
+		saveVector("..\\..\\Python\\Plotting\\Data\\Camcount\\pCc" + std::to_string(c.size()) + "Dev", deviation, 100);
+	}
+}
+
+void orthogonalityPerformance()
+{
+	int distP = 50;
+	//setupRender("Renders\\Renders50", float(distP)/1000.);
+	setupPhysical("Photographs\\CalibrationBol12p50Undistorted");
+
+	Mat disparity;
+	int minDisparity = 235;// 245 * distP / 50;
+	int numDisparities = 96;
+	int disp12MaxDiff = 1500;
+	int preFilterCap = 0; // Deprecated		
+	int uniqRatio = 0;	// Uniqueness ratio		
+	int sWinSize = 200;	// Speckle window size	100
+	int sRange = 5;	// Speckle range
+
+	StereoArraySGBM sgbm = StereoArraySGBM(minDisparity, numDisparities, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange);	 //Photograps/Series1
+	std::vector<Mat> empty{};
+
+	Mat_<float> groundTruthOrthogonality = getOrthogonalityFromCamera(groundTruth, mask, groundTruthNormals, cameras[12], cameras[12])(roi);
+	showImage("Orthogonality", groundTruthOrthogonality, 1, true, 0.5);
+	std::vector<int> additiveCameraPos{ 12, 13, 7, 11, 17, 18, 8, 6, 16, 22, 14, 2, 10, 15, 23, 9, 1, 5, 21, 19, 3, 0, 20, 24, 4 };
+	std::vector<std::pair<float, float>> pairs;
+	for (int i = 0; i < 9; i++)
+	{
+		std::vector<int> c = getCrossIDs(additiveCameraPos[i]);
+		Mat_<float> groundTruthOrthogonality = getOrthogonalityFromCamera(groundTruth, mask, groundTruthNormals, cameras[12], cameras[additiveCameraPos[i]])(roi);
+		showImage("Orthogonality", groundTruthOrthogonality, 1, false, 0.5);
+
+		sgbm.compute(LBPs, images, empty, cameras, 12, roi, disparity, float(distP) / 1000., mask, c);
+		showImage("disparity", disparity - minDisparity * 16, 45, false, 0.5);
+		Mat depth = disparity2Depth(disparity, cameras[12], cameras[13]);
+		std::vector<std::pair<float, float>> tempPairs = getSortedOrthogonalityDifference(depth, groundTruth(roi), groundTruthOrthogonality, mask(roi));
+		pairs.insert(pairs.end(), tempPairs.begin(), tempPairs.end());
+	}
+	sort(pairs.begin(), pairs.end());
+	std::vector<float> depthError, orthogonality;
+	splitPairs(pairs, orthogonality, depthError);
+
+	int window = (int)orthogonality.size()/500;
+	std::vector<float> mvAverage = centeredMovingAverage(depthError, window);
+	float lastHalfAvg = 0;
+	for (int n = (int)mvAverage.size() / 2; n < mvAverage.size(); n++)
+		lastHalfAvg += mvAverage[n] / (mvAverage.size() / 2);
+	mvAverage += -lastHalfAvg;
+
+	//showDifference("diff", depth, groundTruth(roi), 200, mask(roi));
+	std::vector<float> deviation = centeredMovingAverageAbsoluteDeviation(depthError, window);
+	std::string strdp = std::to_string(distP);
+	saveVector("..\\..\\Python\\Plotting\\Data\\Orthogonality\\pOc5p"+ strdp + "Ort", orthogonality, window);
+	saveVector("..\\..\\Python\\Plotting\\Data\\Orthogonality\\pOc5p" + strdp + "Avg", mvAverage, window);
+	saveVector("..\\..\\Python\\Plotting\\Data\\Orthogonality\\pOc5p" + strdp + "Dev", deviation, window);
+}
+
+void fullPerformance()
+{
+	int distP = 50;
+	//setupRender("Renders\\Renders50", float(distP)/1000.);
+	setupPhysical("Photographs\\CalibrationBol12p50Undistorted");
+
+	Mat disparity;
+	int minDisparity = 235;// 245 * distP / 50;
+	int numDisparities = 96;
+	int disp12MaxDiff = 1500;
+	int preFilterCap = 0; // Deprecated		
+	int uniqRatio = 0;	// Uniqueness ratio		
+	int sWinSize = 200;	// Speckle window size	100
+	int sRange = 5;	// Speckle range
+
+	StereoArraySGBM sgbm = StereoArraySGBM(minDisparity, numDisparities, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange);	 //Photograps/Series1
+	std::vector<Mat> empty{};
+
+	Mat_<float> groundTruthOrthogonality = getOrthogonalityFromCamera(groundTruth, mask, groundTruthNormals, cameras[12], cameras[12])(roi);
+	showImage("Orthogonality", groundTruthOrthogonality, 1, false, 0.5);
+
+	sgbm.compute(LBPs, images, empty, cameras, 12, roi, disparity, float(distP) / 1000., mask);
+	showImage("disparity", disparity - minDisparity * 16, 48, true, 0.5);
+	Mat depth = disparity2Depth(disparity, cameras[12], cameras[13]);
+	std::vector<std::pair<float, float>> pairs = getSortedOrthogonalityDifference(depth, groundTruth(roi), groundTruthOrthogonality, mask(roi));
+
+	std::sort(pairs.begin(), pairs.end());
+	std::vector<float> depthError, orthogonality;
+	splitPairs(pairs, orthogonality, depthError);
+
+	int window = (int)orthogonality.size() / 300;
+	std::vector<float> mvAverage = centeredMovingAverage(depthError, window);
+	float lastHalfAvg = 0;
+	for (int n = (int)mvAverage.size() / 2; n < mvAverage.size(); n++)
+		lastHalfAvg += mvAverage[n] / (mvAverage.size() / 2);
+	mvAverage += -lastHalfAvg;
+	showDifference("diff", depth - lastHalfAvg, groundTruth(roi), 150, mask(roi));
+	std::vector<float> deviation = centeredMovingAverageAbsoluteDeviation(depthError, window);
+	std::string strdp = std::to_string(distP);
+	//saveVector("..\\..\\Python\\Plotting\\Data\\FullSetup\\pFc25p" + strdp + "Ort", orthogonality, window);
+	//saveVector("..\\..\\Python\\Plotting\\Data\\FullSetup\\pFc25p" + strdp + "Avg", mvAverage, window);
+	//saveVector("..\\..\\Python\\Plotting\\Data\\FullSetup\\pFc25p" + strdp + "Dev", deviation, window);
+}
+
+void physicalFacePerformance()
+{
+	//setupRender("Renders\\Renders50", float(distP)/1000.);
+	setupPhysicalFace("Photographs\\Series12Undistorted");
+
+	Mat disparity;
+	int minDisparity = 265;// 245 * distP / 50;
+	int numDisparities = 96;
+	int disp12MaxDiff = 3;
+	int preFilterCap = 0; // Deprecated		
+	int uniqRatio = 0;	// Uniqueness ratio		
+	int sWinSize = 200;	// Speckle window size	100		(Currently turned off in stereoArraySGM.cpp)
+	int sRange = 5;	// Speckle range					(Currently turned off in stereoArraySGM.cpp)
+	P1 = 4; P2 = 100;
+	StereoArraySGBM sgbm = StereoArraySGBM(minDisparity, numDisparities, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange);	 //Photograps/Series1
+	std::vector<Mat> empty{};
+
+	sgbm.compute(LBPs, images, empty, cameras, 12, roi, disparity, 50. / 1000., mask);
+	showImage("disparity "+std::to_string(P2), disparity - minDisparity * 16, 50, true, 0.5);
+	Point2i roiPrincipalPoint = cameras[12].principalPoint - roi.tl();
+	//Mat depth = disparity2Depth(disparity, cameras[12], cameras[13]);
+	exportXYZfromDisparity(disparity, "HenkSGM.xyz", cameras[12], 0.05, roiPrincipalPoint, 1, mask(roi));
+	waitKey(0);
 }
 
 int main()
 {
-	setup("Photographs\\Series1RotatedUndistorted");
+	//pitchPerformance(5,1);
+	//pitchPerformance(10,1);
+	//pitchPerformance(20,1);
+	//pitchPerformance(30,1);
+	//pitchPerformance(40,1);
+	//pitchPerformance(50,1);
+	//pitchPerformance(30,2);
+	//pitchPerformance(40,2);
+	//pitchPerformance(50,2);
+ 
+	//camCountPerformance();
 
+	//orthogonalityPerformance();
 
+	//physicalFacePerformance();
 
-	//Rect area = Rect{ Point2i(500, 0), Point2i(3800, 2800) };	//Photograps/Series1
-	Rect area = Rect{ Point2i(1600, 800), Point2i(3000, 2000) };	//Photograps/Series1
-	//Rect area{ Point2i{887,421}, Point2i{1923,1716} };		// Renders3
-
-	std::vector<Mat> subImages2;
-	std::vector<Camera> subCameras2;
-
-	//plt::figure(0);
-	std::vector<int> camSel{1, 4, 6, 7, 9, 10, 11, 12, 13, 15, 16, 17, 20};
-	//for (int c : camSel)
-	//for (int c =0; c< cameras.size(); c++)
-	//{
-	//	subImgsAndCams({ c }, subImages2, subCameras2);
-	//	std::vector<float> error = calcPixelArrayCost(subImages2, subCameras2, cameras[12], 240, 300, Point2i{ 1924,1510 },c);
-	//	plt::plot(error, { {"label", std::to_string(c)} });
-
-	//}		
-	//plt::legend();
-	//plt::show();
-	/*plt::figure(1);
-	subImgsAndCams(camSel, subImages2, subCameras2);
-	std::vector<float> error = calcPixelArrayCost(images, cameras, cameras[12], 240, 300, Point2i{ 1924,1510 },12);
-	plt::plot(error);
-	plt::show();*/
-
-	//std::cout << "Error: " << error.size() << std::endl;
-	////printV(error);
-	//plt::figure();
-	//plt::plot(error);	
-	//plt::show();
-	//waitKey(0);
-
-	Mat disparity;
-	int disp12MaxDiff = 15;
-	int preFilterCap = 15;//PreFilterCap		
-	int uniqRatio = 2;	// Uniqueness ratio		
-	int sWinSize = 200;	// Speckle window size	100
-	int sRange = 5;	// Speckle range
-	int P1 = 5;
-	int P2 = 192;
-	//StereoSGBMImpl2 sgmInitial = StereoSGBMImpl2(216, 64, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange);	// Renders3
-	StereoSGBMImpl2 sgmInitial = StereoSGBMImpl2(252, 64, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange);	// //Photograps/Series1
-	//disparity = getCrossSGM(12, sgmInitial, false);
-	//saveImage("DisparitySave", disparity);
-	disparity = loadImage("DisparitySave");
-	showImage("disparityCross", disparity(area) - 4300, 70, false, 0.5); //3900
-	//getDiffWithAbsoluteReference(disparity(area), area, true);
-
-	Mat roiMask = mask(area);
-	//Mat depth = disparity2Depth(disparity, cameras[12], cameras[13])(area);
-	//Mat normals = depth2Normals(depth, cameras[12]);
-	//for (int i = 0; i < cameras.size(); i++)
-	//{
-	//	faceNormals.push_back(getOrthogonalityFromCamera(depth, roiMask, normals, cameras[12], cameras[i]));
-	//}
-	//normalizeMats(faceNormals);
-
-	//StereoArraySGBM sgbm = StereoArraySGBM(216, 64, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange); // Renders3
-	StereoArraySGBM sgbm = StereoArraySGBM(252, 48, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange);	 //Photograps/Series1
-	std::vector<Mat> empty{};
-	std::vector<Mat> subImages;
-	std::vector<Mat> subSurfsNorms;
-	std::vector<Mat> subSurfsNormsAvgs;
-	std::vector<Camera> subCameras;
-	std::vector<Mat> difMats;
-
-
-	subImgsAndCams({ 7, 11, 12, 13, 17 }, subImages, subCameras);
-	testSGM(images[12](area), subImages, subCameras, 252, 48, area);
-
-	subImgsAndCams({ 0,1,2,3,4, 5,6,7,8,9, 10,11,12,13,14, 15,16,17,18,19, 20,21,22,23,24 }, subImages, subCameras);
-	sgbm.compute(subImages, empty, subCameras, cameras[12], area, disparity);
-	showImage("disparity", disparity - 4300, 70, true, 0.5);
-
-	subImgsAndCams({ 0, 4, 12, 20, 24 }, subImages, subCameras);
-	sgbm.compute(subImages, empty, subCameras, cameras[12], area, disparity);
-	showImage("disparity", disparity - 4300, 70, true, 0.5);
-	//testSGM(images[12](area), subImages, subCameras, 252, 48, area);
-	//std::cout << getAvgDiffWithAbsoluteReference(disparity, area, false, "righthalfCams.jpg") << std::endl;
-
-	//subImgsAndCamsAndSurfs({ 2,3,4, 7,8,9, 12,13,14, 17,18,19, 22,23,24 }, subImages, subCameras, subSurfsNorms);
-	//sgbm.compute(subImages, empty, subCameras, cameras[12], area, disparity);
-	//std::cout << getAvgDiffWithAbsoluteReference(disparity, area, false, "lefthalfCams.jpg") << std::endl;
-
-	//subImgsAndCamsAndSurfs({ 0,1,2,3,4, 5,6,7,8,9, 10,11,12,13,14 }, subImages, subCameras, subSurfsNorms);
-	//sgbm.compute(subImages, empty, subCameras, cameras[12], area, disparity);
-	//std::cout << getAvgDiffWithAbsoluteReference(disparity, area, false, "tophalfCams.jpg") << std::endl;
-	//subImgsAndCamsAndSurfs({ 0,1,2,3,4, 5,6,7,8,9, 10,11,12,13,14, 15,16,17,18,19, 20,21,22,23,24 }, subImages, subCameras, subSurfsNorms);
-	sgbm.compute(images, empty, cameras, cameras[12], area, disparity);
-	showImage("disparity", disparity - 4300, 70, true, 0.5); //4800
-	//std::cout << getAvgDiffWithAbsoluteReference(disparity, area, true, "Series1_no_ortho.jpg") << std::endl;
-	subImgsAndCamsAndSurfs({ 0,1,2,3,4, 5,6,7,8,9, 10,11,12,13,14, 15,16,17,18,19, 20,21,22,23,24 }, subImages, subCameras, subSurfsNorms);
-	sgbm.compute(subImages, faceNormals, subCameras, cameras[12], area, disparity);
-	showImage("disparity", disparity - 4300, 70); //4800
-	//std::cout << getAvgDiffWithAbsoluteReference(disparity, area, true, "Series1_ortho.jpg") << std::endl;
-
-
-	std::vector<int> cams{ 0, 5, 10, 15, 20 };
-	subImgsAndCamsAndSurfs(cams, subImages, subCameras, subSurfsNorms);
-	subSurfsNormsAvgs.push_back(getVectorMatsAverage(subSurfsNorms));
-	sgbm.compute(subImages, empty, subCameras, cameras[12], area, disparity);
-	showImage("disparityOLC", disparity - 4300, 70, false); //4800
-	difMats.push_back(getDiffWithAbsoluteReference(disparity, area));
-
-	for (auto& c : cams) c += 1;
-	subImgsAndCamsAndSurfs(cams, subImages, subCameras, subSurfsNorms);
-	subSurfsNormsAvgs.push_back(getVectorMatsAverage(subSurfsNorms));
-	sgbm.compute(subImages, empty, subCameras, cameras[12], area, disparity);
-	showImage("disparityOLC", disparity - 4300, 70, false); //4800
-	difMats.push_back(getDiffWithAbsoluteReference(disparity, area));
-
-	for (auto& c : cams) c += 1;
-	subImgsAndCamsAndSurfs(cams, subImages, subCameras, subSurfsNorms);
-	subSurfsNormsAvgs.push_back(getVectorMatsAverage(subSurfsNorms));
-	sgbm.compute(subImages, empty, subCameras, cameras[12], area, disparity);
-	showImage("disparityOLC", disparity - 3900, 70, false); //4800
-	difMats.push_back(getDiffWithAbsoluteReference(disparity, area));
-
-	for (auto& c : cams) c += 1;
-	subImgsAndCamsAndSurfs(cams, subImages, subCameras, subSurfsNorms);
-	subSurfsNormsAvgs.push_back(getVectorMatsAverage(subSurfsNorms));
-	sgbm.compute(subImages, empty, subCameras, cameras[12], area, disparity);
-	showImage("disparityOLC", disparity - 3900, 70, false); //4800
-	difMats.push_back(getDiffWithAbsoluteReference(disparity, area));
-
-	for (auto& c : cams) c += 1;
-	subImgsAndCamsAndSurfs(cams, subImages, subCameras, subSurfsNorms);
-	subSurfsNormsAvgs.push_back(getVectorMatsAverage(subSurfsNorms));
-	sgbm.compute(subImages, empty, subCameras, cameras[12], area, disparity);
-	showImage("disparityOLC", disparity - 3900, 70, false); //4800
-	difMats.push_back(getDiffWithAbsoluteReference(disparity, area));
-
-	Mat lowestError{ difMats[0].size(), difMats[0].type(), Scalar{10000}};
-	Mat lowestErrorMat{ difMats[0].size(), CV_8UC3, Scalar{0, 0, 0} };
-	std::vector<Vec3b> Colors{ Vec3b{255,0,0}, Vec3b{170,0,100}, Vec3b{15, 0, 150}, Vec3b{100, 0, 170}, Vec3b{0,0,255} };
-	for (Mat errorMat : difMats)
-	{
-		lowestError = cv::min(lowestError, errorMat);
-	}
-	Mat errorCollage;
-	hconcat(difMats, errorCollage);
-	showImage("difMat", errorCollage, 5, false, 1);
-
-	Mat surfsCollage;
-	hconcat(subSurfsNormsAvgs, surfsCollage);
-	showImage("subsurfs", surfsCollage, 10, true, 0.25);
-
-	//showImage("lowestError", lowestError, 5, true, 1);
-	//showImage("lowestErrorMat", lowestErrorMat, true, 1);
-	for (int matNum = 0; matNum < difMats.size(); matNum++)
-	{
-		Mat errorMat = difMats[matNum];			
-		for (int y = 0; y < errorMat.rows; y++)
-		{
-			for (int x = 0; x < errorMat.cols; x++)
-			{
-				if (errorMat.at<uchar>(y, x) == lowestError.at<uchar>(y, x) && lowestError.at<uchar>(y,x) != 0 && lowestError.at<uchar>(y, x) != UCHAR_MAX)
-					lowestErrorMat.at<Vec3b>(y, x) = Colors[matNum];
-			}
-		}
-	}
-
-	showImage("LowestErr", lowestErrorMat, 1, true, 1);
-
-	//subImgsAndCamsAndSurfs({ 0,1,2,3,4, 5,6,7,8,9, 10,11,12,13,14, 15,16,17,18,19, 20,21,22,23,24 }, subImages, subCameras, subSurfsNorms);
-	//sgbm.compute(subImages, empty, subCameras, cameras[12], area, disparity);
-	//showImage("disparity", disparity - 3900, 70); //4800
-	//std::cout << getAvgDiffWithAbsoluteReference(disparity, area, true, "noOrtho.jpg") << std::endl;
-
-
-
-	//exportOBJfromDisparity(disparity, "disparityTest.obj", cameras[0], cameras[1], 0.5);
-
-	//plotNoseBridge(combination, "Combination");
-	//plotNoseBridge(disparityRef, "Reference");
-	//showPlot();
-
-
-
+	Mat absDiff = imread("absDiffHenk.jpg", IMREAD_GRAYSCALE);
+	Mat diff = imread("meanHenk.jpg", IMREAD_GRAYSCALE);
+	//cv::subtract(diff, -128, diff, noArray(), CV_16S);
+	diff.convertTo(diff, CV_32F, (6.23895 + 6.71251) / 256, -6.71251);
+	absDiff.convertTo(absDiff, CV_32F, 6.71251 / 256.);
+	//min = -6.71251 max = 6.23895
+	Mat posDiff, negDiff;
+	Mat mask = (diff > 0);
+	Mat invMask = (diff < 0);
+	absDiff.copyTo(posDiff, mask);
+	absDiff.copyTo(negDiff, invMask);
+	showImage("mask", mask, 1,false,1);
+	showImage("imask", invMask, 1, false,1);
+	showImage("pos", posDiff, 0.5, false, 1);
+	showImage("neg", negDiff, 0.5, true, 1);
+	showDifference("Difference", posDiff, negDiff, 0.5);
 }
-

@@ -1,25 +1,34 @@
 #pragma once
+#pragma warning (push, 0)	/// Disabling warnings for external libraries
 #include <opencv2/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
 #include "Camera.h"
+#pragma warning (pop)
+
+typedef uchar PixType;
+typedef short CostType;
+typedef short DispType;
 
 template <typename printableVector>
 void printV(printableVector input);
 
-enum class costMetric {
-	Intensity, Derivative, StdDev
-};
 
-std::vector<float> calcDisparityCostForPlotting(std::vector<cv::Mat> images, std::vector<Camera> cameras, Camera centerCam, 
-	int x, int y, int minD, int maxD, costMetric metric);
+//std::vector<float> calcDisparityCostForPlotting(std::vector<cv::Mat> images, std::vector<Camera> cameras, int camID,
+//	int x, int y, int minD, int maxD);
 
 std::vector<float> calcPixelArrayCost(std::vector<cv::Mat>& images, std::vector<Camera> cams, Camera centerCam,
 	int minD, int maxD, cv::Point2i position, int camera = -1);
 
 std::vector<float> calcPixelArrayIntensity(cv::Mat& image, Camera cam, Camera centerCam,
 	int minD, int maxD, cv::Point2i position);
+
+uchar getCamIntensities(PixType* imPointer,
+	int x, int y, int minD, int maxD,
+	cv::Point2f disparityStep, int width, int height, std::array<PixType, 100>& intensities);
+
+
 
 struct StereoArraySGMParams
 {
@@ -56,7 +65,12 @@ public:
 		int _P1, int _P2, int _disp12MaxDiff, int _preFilterCap,
 		int _uniquenessRatio, int _speckleWindowSize, int _speckleRange);
 
-	void compute(std::vector<cv::Mat>& images, std::vector<cv::Mat>& surfaceParallelity, std::vector<Camera> cams, Camera centerCam, cv::Rect area, cv::OutputArray disparr, double camDistance = 0.05);
+	void compute(std::vector<cv::Mat>& LBPs, std::vector<cv::Mat>& images, std::vector<cv::Mat>& surfaceParallelity, std::vector<Camera> cams,
+		int centerCamID, cv::Rect area, cv::OutputArray disparr, double camDistance=0.05, 
+		cv::Mat mask = cv::Mat{}, std::vector<int> usedCams = std::vector<int>{});
+
+	void computeMinCost(std::vector<cv::Mat>& images, std::vector<cv::Mat>& surfaceParallelity, std::vector<Camera> cams,
+		int centerCamID, cv::Rect area, cv::OutputArray disparr, double camDistance=0.05, std::vector<int> usedCams = std::vector<int>{});
 
 	int getMinDisparity() const { return params.minDisparity; }
 	void setMinDisparity(int minDisparity) { params.minDisparity = minDisparity; }

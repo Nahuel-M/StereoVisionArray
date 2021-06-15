@@ -15,3 +15,386 @@
 	//gradient(2) += gAdd;
 	//gradient(5) += gAdd * (i - (board_height - 1) / 2) / 6;
 	//gradient(8) += gAdd * (j - (board_width - 1) / 2) / 6;
+
+
+
+//Mat getDisparityFromPair(std::vector<cv::Mat> &images, std::vector<Camera> &cameras, cv::Mat &mask, std::array<int, 2> pair)
+//{
+//	int kernelSize = 20;
+//	Mat depth = Mat{ images[12].size(), CV_64FC1 };
+//	Mat disparity = Mat{ images[12].size(), CV_8UC1 };
+//	Size resolution = images[0].size();
+//	Point2i halfRes = resolution / 2;
+//	double camDistance = norm(cameras[pair[0]].pos3D - cameras[pair[1]].pos3D);
+//	waitKey(0);
+//	for (int y = kernelSize; y < (resolution.height - kernelSize); y++) {
+//		for (int x = kernelSize; x < resolution.width - kernelSize; x++) {
+//			if (mask.at<uint8_t>(Point(x, y)) == 0) continue;
+//			Mat kernel = images[pair[0]](Rect{ Point2i{x - kernelSize, y - kernelSize}, Point2i{x + kernelSize, y + kernelSize} });
+//
+//			Point3d vec = cameras[pair[0]].inv_project(Point2i{ x, y }-halfRes);
+//			Point3d p1 = cameras[pair[0]].pos3D + (vec * 0.5);
+//			Point3d p2 = cameras[pair[0]].pos3D + vec;
+//			Point2i pixel1 = cameras[pair[1]].project(p1) + halfRes;
+//			Point2i pixel2 = cameras[pair[1]].project(p2) + halfRes;
+//			if (pixel1.x<kernelSize || pixel1.y < kernelSize || pixel1.x > resolution.width - kernelSize || pixel1.y > resolution.height - kernelSize) {
+//				continue;
+//			}
+//			if (pixel2.x<kernelSize || pixel2.y < kernelSize || pixel2.x > resolution.width - kernelSize || pixel2.y > resolution.height - kernelSize) {
+//				continue;
+//			}
+//			std::vector<Point2i> pixels = bresenham(pixel1, pixel2);
+//			std::vector<double> error;
+//			for (auto p : pixels) {
+//				Rect selector = Rect{ p - Point(kernelSize, kernelSize), p + Point(kernelSize, kernelSize) };
+//				Mat selection = images[pair[1]](selector);
+//				Mat result{ CV_32FC1 };
+//
+//				error.push_back(getAbsDiff(selection, kernel));
+//			}
+//
+//			int maxIndex = std::distance(error.begin(), std::min_element(error.begin(), error.end()));
+//
+//			Point2i pixel = pixels[maxIndex];
+//			//std::cout << norm(pixel - Point2i{ x, y }) << std::endl;
+//			disparity.at<unsigned char>(Point(x, y)) = (int)norm(pixel - Point2i{ x, y });
+//		}
+//	}
+//	//imshow("Disp", disparity);
+//	return disparity;
+//}
+
+//Mat getDisparityFromPair2(std::vector<cv::Mat>& images, std::vector<Camera>& cameras, cv::Mat& mask, std::array<int, 2> pair)
+//{
+//	int kernelSize = 20;
+//	Mat depth = Mat{ images[12].size(), CV_64FC1 };
+//	Mat disparity = Mat{ images[12].size(), CV_8UC1 };
+//	Size resolution = images[0].size();
+//	Point2i halfRes = resolution / 2;
+//	double camDistance = norm(cameras[pair[0]].pos3D - cameras[pair[1]].pos3D);
+//
+//	double preMultX = (cameras[pair[0]].pos3D.x - cameras[pair[1]].pos3D.x) / camDistance;
+//	double preMultY = (cameras[pair[0]].pos3D.y - cameras[pair[1]].pos3D.y) / camDistance;
+//	int size[3] = { resolution.width, resolution.height, 155 };
+//	cv::Mat errorStorage = cv::Mat(3, size, CV_16U, cv::Scalar(0));
+//
+//	for (int y = kernelSize; y < (resolution.height - kernelSize); y++) {
+//		for (int x = kernelSize; x < resolution.width - kernelSize; x++) {
+//			if (mask.at<uint8_t>(Point(x, y)) == 0) continue;
+//			Mat kernel = images[pair[0]](Rect{ Point2i{x - kernelSize, y - kernelSize}, Point2i{x + kernelSize, y + kernelSize} });
+//
+//			Point2i pixel1 = { x + int(100 * preMultX), y + int(100 * preMultY) };
+//			Point2i pixel2 = { x + int(255 * preMultX), y + int(255 * preMultY) };
+//
+//			if (pixel1.x<kernelSize || pixel1.y < kernelSize || pixel1.x > resolution.width - kernelSize || pixel1.y > resolution.height - kernelSize) {
+//				continue;
+//			}
+//			if (pixel2.x<kernelSize || pixel2.y < kernelSize || pixel2.x > resolution.width - kernelSize || pixel2.y > resolution.height - kernelSize) {
+//				continue;
+//			}
+//
+//			std::vector<Point2i> pixels = bresenham(pixel1, pixel2);
+//
+//			std::vector<int> error;
+//			for (int p = 0; p < pixels.size(); p++) {
+//				Rect selector = Rect{ pixels[p] - Point(kernelSize, kernelSize), pixels[p] + Point(kernelSize, kernelSize) };
+//				Mat selection = images[pair[1]](selector);
+//				int err = getAbsDiff(selection, kernel);
+//				error.push_back(err);
+//				errorStorage.at<unsigned short>(x, y, p) = err;
+//			}
+//
+//			int maxIndex = std::distance(error.begin(), std::min_element(error.begin(), error.end()));
+//
+//			Point2i pixel = pixels[maxIndex];
+//			//std::cout << norm(pixel - Point2i{ x, y }) << std::endl;
+//			disparity.at<unsigned char>(Point(x, y)) = (int)norm(pixel - Point2i{ x, y });
+//		}
+//	}
+//
+//	//imshow("Disp", disparity);
+//	Mat globDisparity{ disparity.size(), disparity.type() };
+//
+//	for (int y = 1; y < (resolution.height)-1; y++) {
+//		std::cout << " Y: " << y << std::endl;
+//		for (int x = 1; x < resolution.width-1; x++) {
+//			Range range[] = { Range(y,y+1), Range(x,x+1), Range::all() };
+//			Mat data = errorStorage(range);
+//			unsigned short disp =
+//				disparity.at<unsigned char>(y - 1, x) +
+//				disparity.at<unsigned char>(y + 1, x) +
+//				disparity.at<unsigned char>(y, x - 1) +
+//				disparity.at<unsigned char>(y, x + 1);
+//			disp = disp / 4;
+//			for (auto e = 0; e < data.size[0]; e++) {
+//				data.at<unsigned char>(e) = data.at<unsigned char>(e) + (abs(e + 100 - disp) > 0) * 100 + (abs(e + 100 - disp) > 1) * 500;
+//			}
+//			double min;
+//			Point minLoc;            
+//			try
+//			{
+//				minMaxLoc(data, &min, nullptr, &minLoc, nullptr);
+//			}
+//			catch (cv::Exception & e)
+//			{
+//				std::cout << e.what() << std::endl;
+//			}
+//			try 
+//			{
+//				std::cout << y << std::endl;
+//				globDisparity.at<unsigned char>(y, x) = minLoc.x + 100;
+//			}
+//			catch(cv::Exception & e)
+//			{
+//				std::cout << e.what() << std::endl;
+//			}
+//		}
+//	}
+//	showImage("Disp", disparity);
+//	showImage("Glob", globDisparity);
+//	return globDisparity;
+//}
+
+//cv::Mat getDisparityFromPairSGM(cv::Mat& image1, cv::Mat& image2, cv::Mat& mask, Camera cam1, Camera cam2, int P1, int P2)
+//{
+//	Point3d distance = cam1.pos3D - cam2.pos3D;
+//	Ptr<StereoSGBM> sgbm;
+//	Mat* im1pointer = &image1;
+//	Mat* im2pointer = &image2;
+//	Mat im1rot, im2rot;
+//
+//	int disp12MaxDiff = 12;
+//	int preFilterCap = 4;
+//	int uniquenessRatio = 1;
+//	int speckleWindowSize = 100;
+//	int speckleRange = 5;
+//
+//
+//	if (distance.x > 0) {
+//		sgbm = StereoSGBM::create(-240, 144, 1, P1, P2, disp12MaxDiff, preFilterCap, uniquenessRatio, speckleWindowSize, speckleRange, StereoSGBM::MODE_HH);
+//	}
+//	else if (distance.x < 0) {
+//		sgbm = StereoSGBM::create(96, 144, 1, P1, P2, disp12MaxDiff, preFilterCap, uniquenessRatio, speckleWindowSize, speckleRange, StereoSGBM::MODE_HH);
+//	}
+//	else if (distance.y > 0) {
+//		sgbm = StereoSGBM::create(-240, 144, 1, P1, P2, disp12MaxDiff, preFilterCap, uniquenessRatio, speckleWindowSize, speckleRange, StereoSGBM::MODE_HH);
+//		rotate(image1, im1rot, ROTATE_90_COUNTERCLOCKWISE);
+//		rotate(image2, im2rot, ROTATE_90_COUNTERCLOCKWISE);
+//		im1pointer = &im1rot;
+//		im2pointer = &im2rot;
+//	}
+//	else if (distance.y < 0) {
+//		sgbm = StereoSGBM::create(96, 144, 1, P1, P2, disp12MaxDiff, preFilterCap, uniquenessRatio, speckleWindowSize, speckleRange, StereoSGBM::MODE_HH);
+//		rotate(image1, im1rot, ROTATE_90_COUNTERCLOCKWISE);
+//		rotate(image2, im2rot, ROTATE_90_COUNTERCLOCKWISE);
+//		im1pointer = &im1rot;
+//		im2pointer = &im2rot;
+//	}
+//	cv::Mat disparity;
+//	sgbm->setMode(StereoSGBM::MODE_SGBM);
+//	sgbm->compute(*im1pointer, *im2pointer, disparity);
+//	if (distance.y != 0) {
+//		rotate(disparity, disparity, ROTATE_90_CLOCKWISE);
+//	}
+//	disparity = abs(disparity);
+//	std::cout << disparity.type() << std::endl;
+//	disparity.convertTo(disparity, 2);
+//	disparity.setTo(0, mask == 0);
+//
+//	return disparity;
+//}
+
+
+cv::Mat improveWithDisparity(cv::Mat& disparity, cv::Mat centerImage, std::vector<cv::Mat> &images, std::vector<std::array<Camera, 2>> &cameras, int windowSize)
+{
+	Mat mask = getFaceMask(centerImage);
+	Mat improvedDisparity{ disparity.size(), disparity.type() };
+	int kernelSize = (windowSize - 1) / 2;
+	for (int c = 0; c < cameras.size(); c++) {
+		std::array<Camera,2> cam = cameras[c];
+
+		Mat shifted = shiftPerspectiveWithDisparity(cam[0], cam[1], disparity, images[c]);
+		Point2d distance = Point2d{ cam[0].pos3D.x - cam[1].pos3D.x, cam[0].pos3D.y - cam[1].pos3D.y };
+		distance.x = distance.x / norm(distance.x) && (distance.x>0.001);
+		distance.y = distance.y / norm(distance.y) && (distance.y > 0.001);
+		std::cout << distance << std::endl;
+		for (int y = 0; y < centerImage.rows; y++) {
+			for (int x = 0; x < centerImage.cols; x++) {
+				if (mask.at<uint8_t>(Point(x, y)) == 0) continue; 
+				Mat window = centerImage(Rect{ Point2i{x - kernelSize, y - kernelSize}, Point2i{x + kernelSize, y + kernelSize} });
+				std::vector<double> error;
+				for (int p = 0; p <= 10; p++) {
+					Point2i newP = Point2i{ x, y } + (Point2i) distance * (p - 5);
+					Mat compWindow = shifted(Rect{ newP - Point2i{kernelSize, kernelSize}, newP + Point2i{kernelSize, kernelSize} });
+					error.push_back(getAbsDiff(compWindow, window));
+				}
+				int maxIndex = (int)std::distance(error.begin(), std::min_element(error.begin(), error.end()));
+				improvedDisparity.at<unsigned char>(y, x) = disparity.at<unsigned char>(y, x) + ((double)maxIndex - 5.)*(distance.x+distance.y);
+			}
+		}
+
+	}
+	return improvedDisparity;
+}
+
+cv::Mat iterDisparityImproveSGM(cv::Mat& disparity, Mat& mask, cv::Mat& centerIm, cv::Mat& offCenterIm, Camera centerCam, Camera offCenterCam)
+{
+	Mat improvedDisparity{ disparity.size(), disparity.type() };
+	Mat center;
+	centerIm.copyTo(center, mask);
+
+	Mat shifted = shiftPerspectiveWithDisparity(centerCam, offCenterCam, disparity, offCenterIm);
+	showImage("shifted", shifted);
+	Ptr<cv::StereoSGBM> sgbm = cv::StereoSGBM::create(
+		-16, 32, 1,
+		2, 16, 12,
+		4, 1,
+		10, 2,
+		cv::StereoSGBM::MODE_HH
+	);
+
+	Mat addDisp;
+	sgbm->setMode(cv::StereoSGBM::MODE_SGBM);
+	sgbm->compute(center, shifted, addDisp);
+
+	add(disparity, addDisp, improvedDisparity, mask, disparity.type());
+	std::cout << disparity.type() << addDisp.type() << improvedDisparity.type() << std::endl;
+	std::cout << "After " << addDisp.at<signed short>(718, 613) << std::endl;
+
+	return improvedDisparity;
+}
+
+cv::Mat shiftPerspectiveWithDisparity(Camera& inputCam, Camera& outputCam, cv::Mat& disparity, cv::Mat& image)
+{
+	Mat shiftedImage = Mat{ image.size() , image.type() };
+	double camDistance = norm(inputCam.pos3D - outputCam.pos3D);
+
+	double preMultX = (inputCam.pos3D.x - outputCam.pos3D.x) / norm(inputCam.pos3D - outputCam.pos3D) / 16;
+	double preMultY = (inputCam.pos3D.y - outputCam.pos3D.y) / norm(inputCam.pos3D - outputCam.pos3D) / 16;
+	for (int y = 0; y < shiftedImage.rows; y++) {
+		for (int x = 0; x < shiftedImage.cols; x++) {
+			double disp = disparity.at<ushort>(y, x);
+			if (disp == 0) {
+				continue;
+			}
+			int shiftedX = (int) (disp * preMultX) + x;
+			int shiftedY = (int)(disp * preMultY) + y;
+			if (shiftedY >= disparity.rows || shiftedY < 0 || shiftedX >= disparity.cols || shiftedX < 0)
+				continue;
+			shiftedImage.at<unsigned char>(y, x) = image.at<unsigned char>(shiftedY, shiftedX);
+		}
+	}
+	return shiftedImage;
+}
+
+cv::Mat shiftPerspective(Camera inputCam, Camera outputCam, cv::Mat &depth)
+{
+	Mat shiftedDepthMap = Mat{ depth.size() , depth.type() };
+	double preMultX = (inputCam.pos3D.x - outputCam.pos3D.x) * inputCam.f / inputCam.pixelSize;
+	double preMultY = (inputCam.pos3D.y - outputCam.pos3D.y) * inputCam.f / inputCam.pixelSize;
+	//std::cout << "direction0 " << direction[0] << std::endl;
+	for (int x = 0; x < depth.cols; x++) {
+		for (int y = 0; y < depth.rows; y++) {
+			double d = depth.at<ushort>(y,x);
+			if (d < 0.5) 
+				continue;
+			int shiftedX = int(preMultX / d) + x;
+			int shiftedY = int(preMultY / d) + y;
+			if (shiftedY >= depth.rows || shiftedY < 0 || shiftedX >= depth.cols || shiftedX < 0) 
+				continue;
+			shiftedDepthMap.at<double>(Point(shiftedX, shiftedY)) = d;
+		}
+	}
+	return shiftedDepthMap;
+}
+
+cv::Mat shiftDisparityPerspective(Camera inputCam, Camera outputCam, cv::Mat& disparity)
+{
+
+	Mat shiftedDepthMap = Mat{ disparity.size() , disparity.type() };
+	/// Hardcoded cam distance difference of 0.05m. Disparity counts with 1/16 pixel VARIABLE
+	double camXDiff = (inputCam.pos3D.x - outputCam.pos3D.x) / (0.05 * 16);
+	double camYDiff = (inputCam.pos3D.y - outputCam.pos3D.y) / (0.05 * 16);
+
+	for (int x = 0; x < disparity.cols; x++) {
+		for (int y = 0; y < disparity.rows; y++) {
+			double d = disparity.at<ushort>(y, x);
+			if (d == 0) continue;
+			int shiftedX = camXDiff * d + x;
+			int shiftedY = camYDiff * d + y;
+			//std::cout << shiftedX << ", " << shiftedY << std::endl;
+			if (shiftedY >= disparity.rows || shiftedY < 0 || shiftedX >= disparity.cols || shiftedX < 0)
+				continue;
+			shiftedDepthMap.at<ushort>(Point(shiftedX, shiftedY)) = d;
+		}
+	}
+
+	return shiftedDepthMap;
+}
+
+void fillHoles(cv::Mat& disparity, int filterSize) 
+{
+	Mat binaryMask = (disparity != 0);
+	Mat blurWeights{ disparity.size(), CV_16U };
+	GaussianBlur(binaryMask, blurWeights, Size(filterSize, filterSize), 0, 0);
+
+	Mat blurredDisparity;
+	GaussianBlur(disparity, blurredDisparity, Size(filterSize, filterSize), 0, 0);
+
+	Mat weightedBlur;
+	divide(blurredDisparity, blurWeights, weightedBlur, 256, CV_16U);
+
+	weightedBlur.copyTo(disparity, disparity==0);
+}
+
+
+cv::Mat getDisparityFromPairSGM(std::array<int,2> pair, int P1, int P2)
+{
+
+	Point3d distance = cameras[pair[0]].pos3D - cameras[pair[1]].pos3D;
+	Ptr<StereoSGBM> sgbm;
+	Mat* im1pointer = &images[pair[0]];
+	Mat* im2pointer = &images[pair[1]];
+	Mat im1rot, im2rot;
+
+	int disp12MaxDiff = 12;
+	int preFilterCap = 4;//PreFilterCap			4
+	int uniqRatio = 2;	// Uniqueness ratio		
+	int sWinSize = 200;	// Speckle window size	100
+	int sRange = 10;	// Speckle range
+	int numDisp = 48;	// Number of disparities
+	int minDisp = 250;	// Minimum disparity
+	
+
+	if (distance.x > 0) {
+		sgbm = StereoSGBM::create(-minDisp - numDisp, numDisp, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
+	}
+	else if (distance.x < 0) {
+		sgbm = StereoSGBM::create(minDisp, numDisp, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
+	}
+	else if (distance.y < 0) {
+		sgbm = StereoSGBM::create(-minDisp - numDisp, numDisp, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
+		rotate(images[pair[0]], im1rot, ROTATE_90_COUNTERCLOCKWISE);
+		rotate(images[pair[1]], im2rot, ROTATE_90_COUNTERCLOCKWISE);
+		im1pointer = &im1rot;
+		im2pointer = &im2rot;
+	}
+	else if (distance.y > 0) {
+		sgbm = StereoSGBM::create(minDisp, numDisp, 1, P1, P2, disp12MaxDiff, preFilterCap, uniqRatio, sWinSize, sRange, 1);
+		rotate(images[pair[0]], im1rot, ROTATE_90_COUNTERCLOCKWISE);
+		rotate(images[pair[1]], im2rot, ROTATE_90_COUNTERCLOCKWISE);
+		im1pointer = &im1rot;
+		im2pointer = &im2rot;
+	}
+	cv::Mat disparity;
+	//sgbm->setMode(StereoSGBM::MODE_SGBM);
+	sgbm->compute(*im1pointer, *im2pointer, disparity);
+	if (distance.y != 0) {
+		rotate(disparity, disparity, ROTATE_90_CLOCKWISE);
+	}
+	disparity = abs(disparity);
+	disparity.convertTo(disparity, 2);
+	disparity.setTo(0, mask == 0);
+
+	return disparity;
+}
